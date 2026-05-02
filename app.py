@@ -1268,8 +1268,9 @@ st.markdown(f"""
   <div class="strategy-panel">
     <div class="title">◆ TODAY'S STRATEGY · 今日策略</div>
     <div class="main">{strategy}</div>
-    <div class="compact-summary-note" style="margin-top:10px;">信号标签：{" · ".join(signal_tags)}</div>
-    <div class="compact-summary-note" style="margin-top:8px;"><b>{divergence_info.get("title")}</b></div><div class="compact-summary-note"><b>{macro_risk_summary.get("title")}</b></div><div class="compact-summary-note"><b>{pro_risk_summary.get("title")}</b></div>
+    <div class="compact-summary-note" style="margin-top:10px;"><b>半量化状态：</b>{semi_quant_regime.get("cn")} ({semi_quant_regime.get("regime")})</div>
+    <div class="compact-summary-note"><b>核心风险：</b>{pro_risk_summary.get("title")} · {divergence_info.get("title")}</div>
+    <div class="compact-summary-note"><b>信号标签：</b>{" · ".join(signal_tags)}</div>
   </div>
   <div class="signal-card">
     <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
@@ -1279,7 +1280,13 @@ st.markdown(f"""
       <div><div class="compact-summary-note">VIX / F&G</div><div class="compact-summary-value">{vix_value:.1f} / {fg_value:.0f}</div><div class="compact-summary-note">VIX {period}: {vix_ret}</div><div class="compact-summary-note">FG历史：{len(fg_history_table)} 天</div></div>
     </div>
   </div>
-  <div class="position-panel"><div class="k">POSITION SIZING · 仓位建议</div><div class="v">{position_suggestion}</div><div class="compact-summary-note">指权益类资产目标仓位，不是单只股票仓位。</div><div class="compact-summary-note" style="margin-top:8px;">执行原则：分批、留现金、不要追单日波动。</div></div>
+  <div class="position-panel">
+    <div class="k">POSITION SIZING · 仓位建议</div>
+    <div class="v">{position_suggestion}</div>
+    <div class="compact-summary-note"><b>执行原则：</b>{semi_quant_regime.get("action")}</div>
+    <div class="compact-summary-note" style="margin-top:8px;"><b>宏观：</b>{macro_risk_summary.get("title")} · <b>专业：</b>{pro_risk_summary.get("title")}</div>
+    <div class="compact-summary-note">指权益类资产目标仓位，不是单只股票仓位。</div>
+  </div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -1296,53 +1303,6 @@ if divergence_info.get("items"):
         unsafe_allow_html=True,
     )
 
-
-risk_sources = []
-if macro_risk_summary.get("level") != "green":
-    risk_sources.append(macro_risk_summary.get("title"))
-if pro_risk_summary.get("level") != "green":
-    risk_sources.append(pro_risk_summary.get("title"))
-if divergence_info.get("level") not in ("none", None):
-    risk_sources.append(divergence_info.get("title"))
-
-if not risk_sources:
-    risk_sources_text = "当前未发现明显宏观、专业指标或多指标背离风险。"
-else:
-    # 去重保序
-    seen = set()
-    risk_sources_text = " · ".join([x for x in risk_sources if not (x in seen or seen.add(x))])
-
-key_factors = " · ".join([
-    f"宏观：{macro_risk_summary.get('title')}",
-    f"专业：{pro_risk_summary.get('title')}",
-    f"背离：{divergence_info.get('title')}",
-])
-
-st.markdown(
-    f"""
-<div class="unified-summary {combined_level}">
-  <div class="unified-title">Decision Summary · 综合结论</div>
-  <div><b>当前状态：</b>{semi_quant_regime.get("cn")} ({semi_quant_regime.get("regime")})</div>
-  <div><b>执行建议：</b>{semi_quant_regime.get("action")}</div>
-  <div class="unified-grid">
-    <div>
-      <div class="unified-k">Market Signal · 市场信号</div>
-      <div class="unified-v">{score}/100 · {signal}</div>
-    </div>
-    <div>
-      <div class="unified-k">Position · 仓位建议</div>
-      <div class="unified-v">{position_suggestion}</div>
-    </div>
-    <div>
-      <div class="unified-k">Risk Focus · 风险关注</div>
-      <div class="unified-v">{risk_sources_text}</div>
-    </div>
-  </div>
-  <div class="unified-note">{key_factors}</div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
 st.markdown("### Macro & Credit · 宏观信用指标")
 cols = st.columns(4, gap="medium")
