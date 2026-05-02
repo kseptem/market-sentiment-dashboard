@@ -156,6 +156,65 @@ html,body,.stApp{background:#f8fafc!important;color:#111827!important}.block-con
     .pro-card-spacer{margin-bottom:10px}
 }
 
+
+/* --- Unified decision summary --- */
+.unified-summary {
+    border-radius:20px;
+    padding:18px 20px;
+    margin:12px 0 20px 0;
+    border:1px solid #d7dde8;
+    box-shadow:0 3px 16px rgba(17,24,39,.045);
+    font-size:13px;
+    line-height:1.55;
+}
+.unified-summary.green {
+    background:linear-gradient(135deg,#ecfdf5 0%,#ffffff 78%);
+    border-color:#a7f3d0;
+    color:#065f46;
+}
+.unified-summary.yellow {
+    background:linear-gradient(135deg,#fffbeb 0%,#ffffff 78%);
+    border-color:#fde68a;
+    color:#92400e;
+}
+.unified-summary.red {
+    background:linear-gradient(135deg,#fef2f2 0%,#ffffff 78%);
+    border-color:#fecaca;
+    color:#991b1b;
+}
+.unified-title {
+    font-size:18px;
+    font-weight:950;
+    margin-bottom:8px;
+}
+.unified-grid {
+    display:grid;
+    grid-template-columns:1fr 1fr 1fr;
+    gap:14px;
+    margin-top:10px;
+}
+.unified-k {
+    font-size:12px;
+    font-weight:950;
+    opacity:.8;
+}
+.unified-v {
+    font-size:18px;
+    font-weight:950;
+    margin-top:2px;
+}
+.unified-note {
+    font-size:12px;
+    margin-top:8px;
+    opacity:.92;
+}
+@media(max-width:760px){
+    .unified-summary{padding:13px 14px;margin:10px 0 14px 0}
+    .unified-title{font-size:16px}
+    .unified-grid{grid-template-columns:1fr;gap:8px}
+    .unified-v{font-size:16px}
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -1237,46 +1296,49 @@ if divergence_info.get("items"):
         unsafe_allow_html=True,
     )
 
-st.markdown(
-    f"""
-<div class="macro-risk-summary {macro_risk_summary.get("level")}">
-  <b>Macro Risk Summary · {macro_risk_summary.get("title")}</b><br>
-  {macro_risk_summary.get("msg")}<br>
-  <span style="font-size:12px;">{" · ".join(macro_risk_summary.get("detail", []))}</span>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
+risk_sources = []
+if macro_risk_summary.get("level") != "green":
+    risk_sources.append(macro_risk_summary.get("title"))
+if pro_risk_summary.get("level") != "green":
+    risk_sources.append(pro_risk_summary.get("title"))
+if divergence_info.get("level") not in ("none", None):
+    risk_sources.append(divergence_info.get("title"))
 
-decision_detail = " · ".join([
+if not risk_sources:
+    risk_sources_text = "当前未发现明显宏观、专业指标或多指标背离风险。"
+else:
+    # 去重保序
+    seen = set()
+    risk_sources_text = " · ".join([x for x in risk_sources if not (x in seen or seen.add(x))])
+
+key_factors = " · ".join([
     f"宏观：{macro_risk_summary.get('title')}",
     f"专业：{pro_risk_summary.get('title')}",
-    f"半量化：{semi_quant_regime.get('cn')}",
     f"背离：{divergence_info.get('title')}",
 ])
 
 st.markdown(
     f"""
-<div class="decision-summary {combined_level}">
-  <div class="decision-title">Decision Summary · 综合结论</div>
-  <div class="decision-grid">
+<div class="unified-summary {combined_level}">
+  <div class="unified-title">Decision Summary · 综合结论</div>
+  <div><b>当前状态：</b>{semi_quant_regime.get("cn")} ({semi_quant_regime.get("regime")})</div>
+  <div><b>执行建议：</b>{semi_quant_regime.get("action")}</div>
+  <div class="unified-grid">
     <div>
-      <div class="decision-k">Macro Risk · 宏观环境</div>
-      <div class="decision-v">{macro_risk_summary.get("title")}</div>
-      <div>{macro_risk_summary.get("msg")}</div>
+      <div class="unified-k">Market Signal · 市场信号</div>
+      <div class="unified-v">{score}/100 · {signal}</div>
     </div>
     <div>
-      <div class="decision-k">Semi-Quant Regime · 半量化状态</div>
-      <div class="decision-v">{semi_quant_regime.get("cn")}</div>
-      <div>{semi_quant_regime.get("action")}</div>
+      <div class="unified-k">Position · 仓位建议</div>
+      <div class="unified-v">{position_suggestion}</div>
     </div>
     <div>
-      <div class="decision-k">Pro / Divergence · 专业与背离</div>
-      <div class="decision-v">{pro_risk_summary.get("title")}</div>
-      <div>{decision_detail}</div>
+      <div class="unified-k">Risk Focus · 风险关注</div>
+      <div class="unified-v">{risk_sources_text}</div>
     </div>
   </div>
+  <div class="unified-note">{key_factors}</div>
 </div>
 """,
     unsafe_allow_html=True,
@@ -1297,17 +1359,6 @@ for i, name in enumerate(["10Y Yield", "DXY", "HYG", "LQD"]):
             macro_risk_summary.get("levels", {}).get(name, "green"),
         )
 
-
-st.markdown(
-    f"""
-<div class="pro-composite-box {pro_risk_summary.get("level")}">
-  <div class="pro-composite-title">Pro Composite Summary · {pro_risk_summary.get("title")}</div>
-  <div>{pro_risk_summary.get("msg")}</div>
-  <div style="font-size:12px;margin-top:6px;">{" · ".join(pro_risk_summary.get("detail", []))}</div>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
 st.markdown('<div class="pro-title">Professional Signals · 专业增强指标</div>', unsafe_allow_html=True)
 pro_cols = st.columns(3, gap="medium")
