@@ -62,6 +62,44 @@ html,body,[class*="css"]{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI"
 @media(max-width:760px){
 html,body,.stApp{background:#f8fafc!important;color:#111827!important}.block-container{padding-left:.65rem;padding-right:.65rem;padding-top:.25rem;max-width:100%}.pill,.date-pill{display:none}.main-title{font-size:24px;line-height:1.12;margin:0 0 4px;color:#111827!important}.sub-title{font-size:12px;margin-bottom:8px;line-height:1.25;color:#64748b!important}.green-accent{width:28px;height:4px;margin-right:8px}.metric-card{min-height:0!important;padding:10px;margin-bottom:8px;border-radius:14px}.metric-card h3{font-size:14px;line-height:1.1}.metric-card .desc,.source-chip{display:none}.big-number{font-size:38px;letter-spacing:-1px}.badge{font-size:12px;padding:5px 9px;min-width:72px;border-width:1.5px}.segment-wrap{margin-top:4px}.segment-bar{height:12px;margin:4px}.segment{height:12px}.pointer{top:-12px;border-left-width:7px!important;border-right-width:7px!important;border-top-width:12px!important}.segment-labels{margin:0 2px;font-size:8px;gap:1px}.strategy-grid{display:block;margin:4px 0 8px}.strategy-panel,.position-panel,.note-panel,.signal-card{padding:10px 12px;border-radius:14px;margin-bottom:8px;min-height:0!important}.strategy-panel .title,.compact-summary-title{font-size:12px;margin-bottom:4px}.strategy-panel .main{font-size:21px;line-height:1.18}.signal-score{font-size:32px}.signal-label{font-size:14px}.compact-summary-note{font-size:11px}.compact-summary-value{font-size:18px!important}.position-panel .v{font-size:22px}.note-panel{font-size:12px;line-height:1.42;max-height:135px;overflow:auto}.macro-card{min-height:auto;margin-bottom:8px;padding:10px 12px}.macro-value{font-size:22px}.pb-title{font-size:16px!important;margin:10px 0 7px!important;color:#111827!important}.pb-card{padding:7px 8px;border-radius:14px;background:#fff!important;color:#111827!important}.pb-header{display:none}.pb-row{grid-template-columns:62px 1fr 92px;gap:8px;padding:8px;font-size:12px;border-bottom:1px solid #eef2f7}.pb-row .pb-strategy{text-align:right;line-height:1.25}.pb-row .pb-now-wrap{display:none}.pb-range{font-size:13px}.pb-emotion{font-size:13px;color:#111827!important}.pb-strategy{font-size:12px;color:#334155!important}.pb-now{font-size:9px;padding:2px 6px;margin-left:4px}
 }
+
+/* --- Macro heat cards --- */
+.macro-card.heat-green {
+    background: linear-gradient(135deg,#ecfdf5 0%,#ffffff 75%);
+    border-color:#a7f3d0;
+}
+.macro-card.heat-yellow {
+    background: linear-gradient(135deg,#fffbeb 0%,#ffffff 75%);
+    border-color:#fde68a;
+}
+.macro-card.heat-red {
+    background: linear-gradient(135deg,#fef2f2 0%,#ffffff 75%);
+    border-color:#fecaca;
+}
+.macro-risk-summary {
+    border-radius:16px;
+    padding:12px 16px;
+    margin: 4px 0 14px 0;
+    font-size:13px;
+    line-height:1.5;
+    border:1px solid #e2e8f0;
+}
+.macro-risk-summary.green {
+    background:#ecfdf5;
+    border-color:#a7f3d0;
+    color:#065f46;
+}
+.macro-risk-summary.yellow {
+    background:#fffbeb;
+    border-color:#fde68a;
+    color:#92400e;
+}
+.macro-risk-summary.red {
+    background:#fef2f2;
+    border-color:#fecaca;
+    color:#991b1b;
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -511,6 +549,44 @@ def market_signal_engine(vix_value, fg_value, corr, index_return, vix_return, ma
     return score, signal, level, action, position, (tags or [signal]), notes
 
 
+
+def build_macro_risk_summary(macro_summary):
+    levels = {}
+    for name, item in macro_summary.items():
+        levels[name] = macro_heat_level(name, item)
+
+    red_items = [name for name, level in levels.items() if level == "red"]
+    yellow_items = [name for name, level in levels.items() if level == "yellow"]
+
+    if len(red_items) >= 2 or (len(red_items) >= 1 and len(yellow_items) >= 2):
+        level = "red"
+        title = "宏观风险偏高"
+        msg = "多个宏观/信用指标同时承压，建议降低追高动作，提高现金与分批节奏。"
+    elif len(red_items) >= 1 or len(yellow_items) >= 2:
+        level = "yellow"
+        title = "宏观环境开始走弱"
+        msg = "部分利率、美元或信用指标出现压力，建议保持定投但控制新增仓位。"
+    else:
+        level = "green"
+        title = "宏观环境健康"
+        msg = "利率、美元与信用指标整体未出现明显系统性压力。"
+
+    detail = []
+    for name in ["10Y Yield", "DXY", "HYG", "LQD"]:
+        if name in macro_summary:
+            item = macro_summary[name]
+            detail.append(f"{MACRO_DISPLAY_NAMES.get(name, name)}：{item.get('label')}")
+
+    return {
+        "level": level,
+        "title": title,
+        "msg": msg,
+        "detail": detail,
+        "levels": levels,
+    }
+
+
+
 def render_meter_card(kind, value, label, strategy, color, pointer_pct, source=""):
     if kind == "vix":
         title, desc, labels, seg_colors, accent = "VIX · S&P 500", "波动率指数", ["<11", "11-14", "14-18", "18-25", "25-35", "35-50", ">50"], ["#d1fae5", "#10b981", "#86efac", "#fde68a", "#fdba74", "#fca5a5", "#f8b4c2"], "#10b981"
@@ -539,8 +615,68 @@ def render_playbook(title, accent_color, rows, current_idx, yellow=False):
     st.markdown(f'<div class="responsive-playbook"><div class="pb-title"><span style="display:inline-block;width:34px;height:5px;background:{accent_color};border-radius:999px;margin-right:10px;vertical-align:middle;"></span>{title}</div><div class="pb-card"><div class="pb-header"><div>区间</div><div>情绪</div><div>策略</div><div></div></div>{row_html}</div></div>', unsafe_allow_html=True)
 
 
-def render_macro_card(title, value_text, label, note, color, change_text):
-    st.markdown(f'<div class="macro-card"><div class="macro-title">{title}</div><div class="macro-value">{value_text}</div><div class="macro-label" style="color:{color};background:{color}18;border:1px solid {color}55;">{label}</div><div class="macro-note">{note}</div><div class="macro-note">窗口变化：{change_text}</div></div>', unsafe_allow_html=True)
+def macro_heat_level(name, item):
+    label = item.get("label", "")
+    score = item.get("score", 0)
+    change = item.get("change")
+
+    if name == "10Y Yield":
+        if score <= -12:
+            return "red"
+        if score < 0:
+            return "yellow"
+        return "green"
+
+    if name == "DXY":
+        if score <= -7:
+            return "red"
+        if score < 0:
+            return "yellow"
+        return "green"
+
+    if name == "HYG":
+        if score <= -10:
+            return "red"
+        if score < 0:
+            return "yellow"
+        return "green"
+
+    if name == "LQD":
+        if score <= -6:
+            return "red"
+        if score < 0:
+            return "yellow"
+        return "green"
+
+    return "green"
+
+
+def heat_badge_text(level):
+    if level == "red":
+        return "高风险"
+    if level == "yellow":
+        return "警惕"
+    return "健康"
+
+
+def render_macro_card(title, value_text, label, note, color, change_text, heat_level="green"):
+    heat_class = f"heat-{heat_level}"
+    risk_text = heat_badge_text(heat_level)
+    st.markdown(
+        f"""
+<div class="macro-card {heat_class}">
+  <div class="macro-title">{title}</div>
+  <div class="macro-value">{value_text}</div>
+  <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+    <div class="macro-label" style="color:{color};background:{color}18;border:1px solid {color}55;">{label}</div>
+    <div class="macro-label" style="color:{color};background:{color}10;border:1px solid {color}33;">{risk_text}</div>
+  </div>
+  <div class="macro-note">{note}</div>
+  <div class="macro-note">窗口变化：{change_text}</div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 def build_price_chart(index_df, vix_df, index_name):
@@ -627,6 +763,7 @@ for name, df in macro_data.items():
 vix_label, vix_strategy, vix_color, vix_idx = vix_level(float(vix_value))
 fg_label, fg_strategy, fg_color, fg_idx = fear_greed_level(float(fg_value))
 divergence_info = detect_macro_divergences(index_return, vix_return, macro_summary, corr)
+macro_risk_summary = build_macro_risk_summary(macro_summary)
 score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr, index_return, vix_return, macro_summary, divergence_info)
 
 today = datetime.now().strftime("%Y · %m · %d / %a")
@@ -658,7 +795,7 @@ st.markdown(f"""
     <div class="title">◆ TODAY'S STRATEGY · 今日策略</div>
     <div class="main">{strategy}</div>
     <div class="compact-summary-note" style="margin-top:10px;">信号标签：{" · ".join(signal_tags)}</div>
-    <div class="compact-summary-note" style="margin-top:8px;"><b>{divergence_info.get("title")}</b></div>
+    <div class="compact-summary-note" style="margin-top:8px;"><b>{divergence_info.get("title")}</b></div><div class="compact-summary-note"><b>{macro_risk_summary.get("title")}</b></div>
   </div>
   <div class="signal-card">
     <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
@@ -685,12 +822,31 @@ if divergence_info.get("items"):
         unsafe_allow_html=True,
     )
 
+st.markdown(
+    f"""
+<div class="macro-risk-summary {macro_risk_summary.get("level")}">
+  <b>Macro Risk Summary · {macro_risk_summary.get("title")}</b><br>
+  {macro_risk_summary.get("msg")}<br>
+  <span style="font-size:12px;">{" · ".join(macro_risk_summary.get("detail", []))}</span>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
 st.markdown("### Macro & Credit · 宏观信用指标")
 cols = st.columns(4, gap="medium")
 for i, name in enumerate(["10Y Yield", "DXY", "HYG", "LQD"]):
     item = macro_summary.get(name, {})
     with cols[i]:
-        render_macro_card(MACRO_DISPLAY_NAMES.get(name, name), item.get("display", "N/A"), item.get("label", "N/A"), item.get("note", "No data"), item.get("color", "#64748b"), f"{item.get('change'):+.2f}%" if item.get("change") is not None else "N/A")
+        render_macro_card(
+            MACRO_DISPLAY_NAMES.get(name, name),
+            item.get("display", "N/A"),
+            item.get("label", "N/A"),
+            item.get("note", "No data"),
+            item.get("color", "#64748b"),
+            f"{item.get('change'):+.2f}%" if item.get("change") is not None else "N/A",
+            macro_risk_summary.get("levels", {}).get(name, "green"),
+        )
 
 st.markdown("### 策略区间")
 pb1, pb2 = st.columns(2, gap="medium")
