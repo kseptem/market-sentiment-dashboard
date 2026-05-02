@@ -1,6 +1,7 @@
 import json
 import re
 from datetime import datetime, timezone
+from pathlib import Path
 from typing import Optional, Tuple
 
 import numpy as np
@@ -886,6 +887,88 @@ def fetch_fear_greed_with_fallback(manual_value: float) -> Tuple[float, str, str
 
 
 
+
+FG_HISTORY_PATH = Path("fg_history.csv")
+
+
+def load_fg_history() -> pd.DataFrame:
+    """
+    Read Fear & Greed history from fg_history.csv.
+    This file is expected to be maintained locally by update_fg_history.py and pushed to GitHub.
+    Streamlit Cloud then reads it as a normal repo file.
+    """
+    if not FG_HISTORY_PATH.exists():
+        return pd.DataFrame(columns=["date", "FearGreed", "label", "source", "updated_at"])
+
+    try:
+        hist = pd.read_csv(FG_HISTORY_PATH)
+        if hist.empty:
+            return pd.DataFrame(columns=["date", "FearGreed", "label", "source", "updated_at"])
+
+        required = ["date", "FearGreed"]
+        for col in required:
+            if col not in hist.columns:
+                return pd.DataFrame(columns=["date", "FearGreed", "label", "source", "updated_at"])
+
+        if "label" not in hist.columns:
+            hist["label"] = ""
+        if "source" not in hist.columns:
+            hist["source"] = ""
+        if "updated_at" not in hist.columns:
+            hist["updated_at"] = ""
+
+        hist["date"] = pd.to_datetime(hist["date"], errors="coerce").dt.date.astype(str)
+        hist["FearGreed"] = pd.to_numeric(hist["FearGreed"], errors="coerce")
+        hist = hist.dropna(subset=["date", "FearGreed"])
+        hist = hist.drop_duplicates(subset=["date"], keep="last")
+        hist = hist.sort_values("date")
+        return hist[["date", "FearGreed", "label", "source", "updated_at"]]
+    except Exception:
+        return pd.DataFrame(columns=["date", "FearGreed", "label", "source", "updated_at"])
+
+
+def build_fg_history_for_app(current_value: float, current_label: str, current_source: str) -> pd.DataFrame:
+    """
+    Use repo-tracked fg_history.csv as the durable source.
+    Add today's live/current value in memory only if not present, so correlation can include today
+    without relying on Streamlit Cloud filesystem persistence.
+    """
+    hist = load_fg_history()
+    today_str = datetime.now().date().isoformat()
+
+    current_row = pd.DataFrame([{
+        "date": today_str,
+        "FearGreed": float(current_value),
+        "label": str(current_label),
+        "source": str(current_source),
+        "updated_at": datetime.now(timezone.utc).isoformat(),
+    }])
+
+    if hist.empty:
+        hist = current_row
+    elif today_str not in set(hist["date"].astype(str)):
+        hist = pd.concat([hist, current_row], ignore_index=True)
+
+    hist["date"] = pd.to_datetime(hist["date"], errors="coerce").dt.date.astype(str)
+    hist["FearGreed"] = pd.to_numeric(hist["FearGreed"], errors="coerce")
+    hist = hist.dropna(subset=["date", "FearGreed"])
+    hist = hist.drop_duplicates(subset=["date"], keep="last")
+    hist = hist.sort_values("date")
+    return hist
+
+
+def fg_history_for_correlation(hist: pd.DataFrame) -> pd.DataFrame:
+    if hist is None or hist.empty:
+        return pd.DataFrame(columns=["time", "FearGreed"])
+
+    x = hist.copy()
+    x["time"] = pd.to_datetime(x["date"], errors="coerce")
+    x["FearGreed"] = pd.to_numeric(x["FearGreed"], errors="coerce")
+    x = x.dropna(subset=["time", "FearGreed"])
+    return x[["time", "FearGreed"]].sort_values("time")
+
+
+
 def vix_level(v: float):
     if v < 11:
         return "压波动", "停止追高，保留现金", "#10b981", 0
@@ -1382,7 +1465,13 @@ index_df = fetch_yahoo(symbol, period, interval)
 vix_df = fetch_yahoo("^VIX", period, interval)
 
 vix_value = safe_float(vix_df["Close"].iloc[-1], 0) if not vix_df.empty else 0
-fg_value, fg_rating, fg_source, fg_hist = fetch_fear_greed_with_fallback(float(manual_fg))
+fg_value, fg_rating, fg_source, fg_hist_live = fetch_fear_greed_with_fallback(float(manual_fg))
+
+# Durable Fear & Greed history comes from repo-tracked fg_history.csv.
+# Local collector updates this CSV and pushes it to GitHub daily.
+fg_history_table = build_fg_history_for_app(float(fg_value), str(fg_rating), str(fg_source))
+fg_hist = fg_history_for_correlation(fg_history_table)
+
 
 vix_label, vix_strategy, vix_color, vix_idx = vix_level(vix_value)
 fg_label, fg_strategy, fg_color, fg_idx = fear_greed_level(fg_value)
@@ -1484,6 +1573,7 @@ st.markdown(
         <div class="compact-summary-note">VIX / F&G</div>
         <div class="compact-summary-value" style="font-size:20px;">{vix_value:.1f} / {fg_value:.0f}</div>
         <div class="compact-summary-note">VIX {vix_ret} · {fg_rating}</div>
+        <div class="compact-summary-note">FG历史：{len(fg_history_table)} 天</div>
       </div>
     </div>
   </div>
@@ -1531,7 +1621,7 @@ m1.metric(
 )
 m2.metric(
     f"{index_label} vs Fear & Greed",
-    f"{corr_fg:.3f}" if corr_fg is not None and not np.isnan(corr_fg) else "N/A",
+    f"{corr_fg:.3f}" if corr_fg is not None and not np.isnan(corr_fg) else "N/A · need 5+ days",
     help="使用同日收益率与 Fear & Greed 日变化计算。CNN 历史数据不可用时可能无法计算。",
 )
 
@@ -1556,6 +1646,23 @@ st.markdown(
 if corr_df is not None and not corr_df.empty:
     st.plotly_chart(build_corr_chart(corr_df), use_container_width=True)
 
+
+with st.expander("查看 Fear & Greed 历史数据"):
+    st.caption("数据来自 repo 中的 fg_history.csv。你本地 collector 每晚 23:00 更新并 push 后，Streamlit Cloud 会读取最新历史。")
+    if fg_history_table is None or fg_history_table.empty:
+        st.write("No Fear & Greed history yet.")
+    else:
+        show_hist = fg_history_table.tail(180).copy()
+        show_hist["FearGreed"] = pd.to_numeric(show_hist["FearGreed"], errors="coerce").round(2)
+        st.dataframe(show_hist, use_container_width=True)
+        st.download_button(
+            "下载 fg_history.csv",
+            data=fg_history_table.to_csv(index=False).encode("utf-8"),
+            file_name="fg_history.csv",
+            mime="text/csv",
+        )
+
+
 with st.expander("查看原始相关性数据 · 字段说明"):
     st.markdown(
         """
@@ -1565,7 +1672,7 @@ with st.expander("查看原始相关性数据 · 字段说明"):
 <b>IndexRet</b>：指数日收益率。<br>
 <b>VIXChg</b>：VIX 日变化率。<br>
 <b>RollingCorr_Index_VIX</b>：指数收益率与 VIX 变化率的滚动相关性，通常应为负值。<br>
-<b>FearGreed</b>：CNN 恐惧与贪婪指数；如果使用 Finhacker fallback，只有最新值，历史列可能为空。<br>
+<b>FearGreed</b>：CNN 恐惧与贪婪指数；来自 repo 内 fg_history.csv，每天一条；累计 5 天以上后可计算与指数的相关性。<br>
 <b>FGChg</b>：Fear & Greed 的日变化。历史数据不足时可能为空。<br>
 <b>Market Signal Score</b>：综合 VIX、Fear & Greed、相关性和价格-波动背离后的 0-100 分；越高代表越适合增量买入。<br>
 <b>仓位建议</b>：这里指权益类资产目标仓位区间，不是单只股票仓位。
@@ -1590,7 +1697,7 @@ st.markdown(
 <div class="small-note">
 Data: Yahoo Finance via yfinance · CBOE VIX · CNN Fear & Greed unofficial endpoint/fallback manual input.
 <br>
-仅供参考，不构成投资建议。CNN Fear & Greed 没有稳定官方公开 API，如接口不可用会自动尝试 Finhacker fallback，仍失败才使用左侧手动 fallback 数值。
+仅供参考，不构成投资建议。CNN Fear & Greed 没有稳定官方公开 API，如接口不可用会自动尝试 Finhacker fallback；历史数据读取 repo 内 fg_history.csv。
 </div>
 """,
     unsafe_allow_html=True,
