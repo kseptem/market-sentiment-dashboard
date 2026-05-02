@@ -595,6 +595,50 @@ div[data-testid="stMetricValue"] {
 .pb-now{font-size:9px;padding:2px 6px;margin-left:4px}
 }
 
+
+/* --- Mobile dark-mode title fix --- */
+@media (max-width:760px){
+    html, body, .stApp {
+        background:#f8fafc !important;
+        color:#111827 !important;
+    }
+    h1, h2, h3, .stMarkdown h1, .stMarkdown h2, .stMarkdown h3 {
+        color:#111827 !important;
+    }
+    .pb-title {
+        color:#111827 !important;
+        opacity:1 !important;
+        background:transparent !important;
+        font-size:16px !important;
+        margin:10px 0 7px 0 !important;
+    }
+    .responsive-playbook {
+        color:#111827 !important;
+    }
+    .pb-card {
+        background:#ffffff !important;
+        color:#111827 !important;
+    }
+    .pb-emotion, .pb-strategy {
+        color:#111827 !important;
+    }
+    .pb-strategy {
+        color:#334155 !important;
+    }
+    div[data-testid="stMarkdownContainer"] > h3 {
+        font-size:18px !important;
+        margin-top:8px !important;
+        margin-bottom:4px !important;
+        color:#111827 !important;
+    }
+    .main-title {
+        color:#111827 !important;
+    }
+    .sub-title {
+        color:#64748b !important;
+    }
+}
+
 </style>
 """,
     unsafe_allow_html=True,
