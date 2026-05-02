@@ -76,7 +76,8 @@ INDEX_MAP = {
     "Dow Jones (^DJI)": "^DJI",
 }
 MACRO_SYMBOLS = {"10Y Yield": "^TNX", "DXY": "DX-Y.NYB", "HYG": "HYG", "LQD": "LQD"}
-PERIOD_OPTIONS = ["1mo", "3mo", "6mo", "1y", "2y", "5y"]
+MACRO_DISPLAY_NAMES = {"10Y Yield": "10Y Yield · 美国10年期国债收益率", "DXY": "DXY · 美元指数", "HYG": "HYG · 高收益债信用风险", "LQD": "LQD · 投资级债/利率压力"}
+PERIOD_OPTIONS = ["5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
 INTERVAL_OPTIONS = ["1d", "60m", "30m", "15m", "5m", "1m"]
 FG_HISTORY_PATH = Path("fg_history.csv")
 
@@ -387,7 +388,72 @@ def compute_correlations(index_df, vix_df, fg_hist, macro_data, rolling_window):
     return merged, corr
 
 
-def market_signal_engine(vix_value, fg_value, corr, index_return, vix_return, macro_summary):
+
+def detect_macro_divergences(index_return, vix_return, macro_summary, corr):
+    """
+    Detect cross-market divergences.
+    A divergence means equity price action is not confirmed by risk, dollar, or credit indicators.
+    """
+    divergences = []
+    severity = 0
+
+    hyg_chg = macro_summary.get("HYG", {}).get("change")
+    dxy_chg = macro_summary.get("DXY", {}).get("change")
+    lqd_chg = macro_summary.get("LQD", {}).get("change")
+    ten_y_label = macro_summary.get("10Y Yield", {}).get("label")
+    ten_y_score = macro_summary.get("10Y Yield", {}).get("score", 0)
+    corr_vix = corr.get("VIX")
+
+    if index_return is not None and index_return > 0:
+        if vix_return is not None and vix_return > 0:
+            divergences.append("指数上涨但 VIX 同步上升：上涨质量偏弱")
+            severity += 1
+        if dxy_chg is not None and dxy_chg > 1:
+            divergences.append("指数上涨但 DXY 走强：美元流动性边际收紧")
+            severity += 1
+        if hyg_chg is not None and hyg_chg < -1:
+            divergences.append("指数上涨但 HYG 走弱：信用市场不确认上涨")
+            severity += 2
+        if lqd_chg is not None and lqd_chg < -1.5:
+            divergences.append("指数上涨但 LQD 走弱：利率/债券端压力仍在")
+            severity += 1
+
+    if ten_y_score <= -8:
+        divergences.append(f"10Y Yield 处于「{ten_y_label}」：估值端存在压力")
+        severity += 1
+
+    if corr_vix is not None and not np.isnan(corr_vix) and corr_vix > -0.3:
+        divergences.append("指数与 VIX 负相关明显减弱：价格-波动结构异常")
+        severity += 2
+
+    if severity >= 4:
+        level = "high"
+        title = "多指标背离 · 高风险警报"
+        penalty = -18
+    elif severity >= 2:
+        level = "medium"
+        title = "多指标背离 · 风险上升"
+        penalty = -10
+    elif severity >= 1:
+        level = "low"
+        title = "轻微信号背离"
+        penalty = -4
+    else:
+        level = "none"
+        title = "未发现明显多指标背离"
+        penalty = 0
+
+    return {
+        "level": level,
+        "title": title,
+        "items": divergences,
+        "severity": severity,
+        "penalty": penalty,
+    }
+
+
+
+def market_signal_engine(vix_value, fg_value, corr, index_return, vix_return, macro_summary, divergence_info=None):
     score, notes, tags = 50, [], []
     if vix_value < 11: score -= 14; notes.append("VIX < 11：波动被压低，追高性价比下降。")
     elif vix_value < 14: score -= 4; notes.append("VIX 11-14：Risk-On，适合持有，但新增仓位别太激进。")
@@ -429,6 +495,12 @@ def market_signal_engine(vix_value, fg_value, corr, index_return, vix_return, ma
     if index_return is not None and index_return > 0:
         if hyg_chg is not None and hyg_chg < -1: score -= 12; tags.append("信用背离"); notes.append("指数上涨但 HYG 走弱，信用市场不确认上涨。")
         if dxy_chg is not None and dxy_chg > 1: score -= 8; tags.append("美元背离"); notes.append("指数上涨但 DXY 走强，全球流动性边际收紧。")
+
+    if divergence_info and divergence_info.get("penalty", 0) < 0:
+        score += divergence_info.get("penalty", 0)
+        if divergence_info.get("level") in ("medium", "high"):
+            tags.append("多指标背离")
+            notes.append(divergence_info.get("title", "多指标背离风险上升") + "。")
 
     score = int(max(0, min(100, score)))
     if score >= 82: signal, level, action, position = "强机会区", "opportunity", "强力分批加仓 · 避免一次性 All-in", "75% — 90%"
@@ -508,7 +580,7 @@ def build_corr_chart(corr_df):
 with st.sidebar:
     st.markdown("### Dashboard Settings")
     index_label = st.selectbox("Market index", list(INDEX_MAP.keys()), index=0)
-    period = st.selectbox("History window", PERIOD_OPTIONS, index=3)
+    period = st.selectbox("History window", PERIOD_OPTIONS, index=4)
     interval = st.selectbox("Interval", INTERVAL_OPTIONS, index=0)
     rolling_window = st.slider("Rolling correlation window", 5, 120, 30, 5)
     refresh = st.slider("Auto refresh seconds", 0, 600, 120, 15)
@@ -554,7 +626,8 @@ for name, df in macro_data.items():
 
 vix_label, vix_strategy, vix_color, vix_idx = vix_level(float(vix_value))
 fg_label, fg_strategy, fg_color, fg_idx = fear_greed_level(float(fg_value))
-score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr, index_return, vix_return, macro_summary)
+divergence_info = detect_macro_divergences(index_return, vix_return, macro_summary, corr)
+score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr, index_return, vix_return, macro_summary, divergence_info)
 
 today = datetime.now().strftime("%Y · %m · %d / %a")
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
@@ -581,7 +654,12 @@ with card3:
 
 st.markdown(f"""
 <div class="strategy-grid">
-  <div class="strategy-panel"><div class="title">◆ TODAY'S STRATEGY · 今日策略</div><div class="main">{strategy}</div><div class="compact-summary-note" style="margin-top:10px;">信号标签：{" · ".join(signal_tags)}</div></div>
+  <div class="strategy-panel">
+    <div class="title">◆ TODAY'S STRATEGY · 今日策略</div>
+    <div class="main">{strategy}</div>
+    <div class="compact-summary-note" style="margin-top:10px;">信号标签：{" · ".join(signal_tags)}</div>
+    <div class="compact-summary-note" style="margin-top:8px;"><b>{divergence_info.get("title")}</b></div>
+  </div>
   <div class="signal-card">
     <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
     <div style="display:flex;align-items:end;gap:12px;margin-bottom:12px;"><div class="signal-score">{score}</div><div><div class="signal-label">{signal}</div><div class="compact-summary-note">0-100 越高越适合增量买入</div></div></div>
@@ -594,12 +672,25 @@ st.markdown(f"""
 </div>
 """, unsafe_allow_html=True)
 
+if divergence_info.get("items"):
+    div_items = "<br>".join([f"• {x}" for x in divergence_info.get("items", [])[:5]])
+    div_color = "#ef4444" if divergence_info.get("level") == "high" else ("#eab308" if divergence_info.get("level") == "medium" else "#3b82f6")
+    st.markdown(
+        f"""
+<div class="note-panel {'danger' if divergence_info.get('level') == 'high' else 'warning' if divergence_info.get('level') == 'medium' else ''}" style="margin-bottom:14px;">
+  <b>背离检测 · {divergence_info.get("title")}</b><br>
+  {div_items}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
 st.markdown("### Macro & Credit · 宏观信用指标")
 cols = st.columns(4, gap="medium")
 for i, name in enumerate(["10Y Yield", "DXY", "HYG", "LQD"]):
     item = macro_summary.get(name, {})
     with cols[i]:
-        render_macro_card(name, item.get("display", "N/A"), item.get("label", "N/A"), item.get("note", "No data"), item.get("color", "#64748b"), f"{item.get('change'):+.2f}%" if item.get("change") is not None else "N/A")
+        render_macro_card(MACRO_DISPLAY_NAMES.get(name, name), item.get("display", "N/A"), item.get("label", "N/A"), item.get("note", "No data"), item.get("color", "#64748b"), f"{item.get('change'):+.2f}%" if item.get("change") is not None else "N/A")
 
 st.markdown("### 策略区间")
 pb1, pb2 = st.columns(2, gap="medium")
@@ -644,9 +735,10 @@ with st.expander("查看原始相关性数据 · 字段说明"):
 <b>Index</b>：指数/ETF价格。<br>
 <b>VIX</b>：波动率指数，越高代表市场恐慌越强。<br>
 <b>FearGreed</b>：来自 fg_history.csv，每天一条，累计 5 天以上后可计算相关性。<br>
-<b>10Y Yield</b>：10年期美债收益率，估值锚。<br>
-<b>DXY</b>：美元指数，流动性指标。<br>
-<b>HYG/LQD</b>：信用与利率压力 proxy。<br>
+<b>10Y Yield / 美国10年期国债收益率</b>：估值锚，越高越压制估值。<br>
+<b>DXY / 美元指数</b>：美元流动性指标，走强通常压制风险资产。<br>
+<b>HYG / 高收益债ETF</b>：信用风险 proxy，走弱代表信用端压力。<br>
+<b>LQD / 投资级债ETF</b>：利率/高等级信用压力 proxy。<br>
 <b>RollingCorr</b>：滚动相关性，判断价格与风险因子是否出现背离。
 </div>
 """, unsafe_allow_html=True)
