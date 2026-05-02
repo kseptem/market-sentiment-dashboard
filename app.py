@@ -327,9 +327,10 @@ div[data-testid="stMetricValue"] {
     height: 5px;
 }
 .metric-card {
-    padding: 16px 18px 14px 18px;
-    margin-bottom: 14px;
+    padding: 14px 16px 12px 16px;
+    margin-bottom: 12px;
     border-radius: 16px;
+    min-height: 250px;
 }
 .metric-card h3 {
     font-size: 17px;
@@ -338,7 +339,7 @@ div[data-testid="stMetricValue"] {
     font-size: 13px;
 }
 .big-number {
-    font-size: 52px;
+    font-size: 48px;
 }
 .badge {
     font-size: 14px;
@@ -472,6 +473,72 @@ div[data-testid="stMetricValue"] {
         min-width: 88px;
         font-size: 12px;
         padding: 6px 10px;
+    }
+}
+
+
+.strategy-grid {
+    display:grid;
+    grid-template-columns: 1.05fr 1.35fr 1fr;
+    gap:14px;
+    align-items:stretch;
+    margin: 6px 0 14px 0;
+}
+.strategy-panel {
+    background:#ecfdf5;
+    border:2px solid #10b981;
+    border-radius:16px;
+    padding:16px 18px;
+    height:100%;
+}
+.strategy-panel .title {
+    color:#059669;
+    font-size:14px;
+    font-weight:950;
+    margin-bottom:8px;
+}
+.strategy-panel .main {
+    color:#111827;
+    font-size:28px;
+    font-weight:950;
+    line-height:1.2;
+}
+.position-panel {
+    background:#ffffff;
+    border:1px solid #d7dde8;
+    border-radius:16px;
+    padding:16px 18px;
+    height:100%;
+    box-shadow:0 2px 12px rgba(17,24,39,0.035);
+}
+.position-panel .k {
+    color:#64748b;
+    font-size:13px;
+    font-weight:900;
+}
+.position-panel .v {
+    color:#111827;
+    font-size:26px;
+    font-weight:950;
+    margin-top:4px;
+}
+.note-panel {
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-left:5px solid #10b981;
+    border-radius:16px;
+    padding:14px 16px;
+    height:100%;
+    color:#334155;
+    font-size:14px;
+    line-height:1.5;
+}
+@media (max-width: 1000px) {
+    .strategy-grid {
+        grid-template-columns: 1fr;
+    }
+    .metric-card {
+        min-height: auto;
     }
 }
 
@@ -872,7 +939,7 @@ def render_playbook(title: str, accent_color: str, rows, current_idx: int, yello
       </div>
     </div>
     """
-    components.html(html, height=250, scrolling=False)
+    components.html(html, height=335, scrolling=False)
 
 
 def build_price_chart(index_df: pd.DataFrame, vix_df: pd.DataFrame, index_name: str):
@@ -1258,89 +1325,90 @@ index_return = pct_change_text(index_df)
 vix_return = pct_change_text(vix_df)
 score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr_vix, index_return, vix_return)
 
-top_left, top_right = st.columns([2.2, 1], gap="large")
+# Row 1: three compact core cards
+card1, card2, card3 = st.columns([1.05, 1.05, 0.95], gap="medium")
 
-with top_left:
-    c_vix, c_fg = st.columns(2, gap="medium")
-    with c_vix:
-        render_meter_card(
-            "vix",
-            float(vix_value),
-            vix_label,
-            vix_strategy,
-            vix_color,
-            vix_pointer_pct(float(vix_value)),
-            source="Yahoo Finance / CBOE VIX",
-        )
-    with c_fg:
-        render_meter_card(
-            "fg",
-            float(fg_value),
-            fg_label,
-            fg_strategy,
-            fg_color,
-            fg_pointer_pct(float(fg_value)),
-            source=fg_source,
-        )
-
-with top_right:
-    st.markdown(
-        f"""
-<div class="signal-card">
-  <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
-  <div style="display:flex;align-items:end;gap:12px;">
-    <div class="signal-score">{score}</div>
-    <div>
-      <div class="signal-label">{signal}</div>
-      <div class="compact-summary-note">0-100 越高代表越适合增量买入</div>
-      <div class="compact-summary-note">建议权益仓位：<b>{position_suggestion}</b></div>
-    </div>
-  </div>
-</div>
-<div class="strategy-box">
-  <div class="strategy-title">◆ TODAY'S STRATEGY · 今日策略</div>
-  <div class="strategy-main">{strategy}</div>
-  <div class="compact-summary-note" style="margin-top:8px;">信号标签：{" · ".join(signal_tags)}</div>
-</div>
-""",
-        unsafe_allow_html=True,
+with card1:
+    render_meter_card(
+        "vix",
+        float(vix_value),
+        vix_label,
+        vix_strategy,
+        vix_color,
+        vix_pointer_pct(float(vix_value)),
+        source="Yahoo Finance / CBOE VIX",
     )
 
+with card2:
+    render_meter_card(
+        "fg",
+        float(fg_value),
+        fg_label,
+        fg_strategy,
+        fg_color,
+        fg_pointer_pct(float(fg_value)),
+        source=fg_source,
+    )
+
+with card3:
     last_index = f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A"
     idx_ret = f"{index_return:+.2f}%" if index_return is not None else "N/A"
     vix_ret = f"{vix_return:+.2f}%" if vix_return is not None else "N/A"
 
     st.markdown(
         f"""
-<div class="compact-summary-card">
-  <div class="compact-summary-title">核心数据</div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+<div class="signal-card" style="min-height:250px;">
+  <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
+  <div style="display:flex;align-items:end;gap:12px;margin-bottom:12px;">
+    <div class="signal-score">{score}</div>
+    <div>
+      <div class="signal-label">{signal}</div>
+      <div class="compact-summary-note">越高越适合增量买入</div>
+    </div>
+  </div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;">
     <div>
       <div class="compact-summary-note">{index_label}</div>
-      <div class="compact-summary-value" style="font-size:21px;">{last_index}</div>
+      <div class="compact-summary-value" style="font-size:20px;">{last_index}</div>
       <div class="compact-summary-note">{idx_ret}</div>
     </div>
     <div>
       <div class="compact-summary-note">VIX / F&G</div>
-      <div class="compact-summary-value" style="font-size:21px;">{vix_value:.1f} / {fg_value:.0f}</div>
+      <div class="compact-summary-value" style="font-size:20px;">{vix_value:.1f} / {fg_value:.0f}</div>
       <div class="compact-summary-note">VIX {vix_ret} · {fg_rating}</div>
     </div>
   </div>
+  <div style="margin-top:12px;" class="compact-summary-note">建议权益仓位：<b>{position_suggestion}</b></div>
 </div>
 """,
         unsafe_allow_html=True,
     )
 
-    note_html = "<br>".join([f"• {x}" for x in signal_notes[:4]])
-    st.markdown(
-        f"""
-<div class="annotation-box {annotation_class(signal_level)}">
-  <b>信号注释：</b><br>{note_html}
+# Row 2: strategy and explanations full width
+note_html = "<br>".join([f"• {x}" for x in signal_notes[:4]])
+st.markdown(
+    f"""
+<div class="strategy-grid">
+  <div class="strategy-panel">
+    <div class="title">◆ TODAY'S STRATEGY · 今日策略</div>
+    <div class="main">{strategy}</div>
+    <div class="compact-summary-note" style="margin-top:10px;">信号标签：{" · ".join(signal_tags)}</div>
+  </div>
+  <div class="note-panel {annotation_class(signal_level)}">
+    <b>信号注释：</b><br>{note_html}
+  </div>
+  <div class="position-panel">
+    <div class="k">POSITION SIZING · 仓位建议</div>
+    <div class="v">{position_suggestion}</div>
+    <div class="compact-summary-note">指权益类资产目标仓位，不是单只股票仓位。</div>
+    <div class="compact-summary-note" style="margin-top:8px;">执行原则：分批、留现金、不要追单日波动。</div>
+  </div>
 </div>
 """,
-        unsafe_allow_html=True,
-    )
+    unsafe_allow_html=True,
+)
 
+# Row 3: playbooks immediately below, no blank area
 st.markdown("### 策略区间")
 pb1, pb2 = st.columns(2, gap="medium")
 with pb1:
