@@ -679,19 +679,29 @@ def compute_return_pct(df: pd.DataFrame) -> Optional[float]:
     return float((close.iloc[-1] / close.iloc[0] - 1) * 100)
 
 
-def compute_correlations(index_df: pd.DataFrame, vix_df: pd.DataFrame, fg_hist: Optional[pd.DataFrame], rolling_window: int) -> tuple[pd.DataFrame, Optional[float], Optional[float]]:
+def compute_correlations(index_df: pd.DataFrame, vix_df: pd.DataFrame, fg_hist: Optional[pd.DataFrame], rolling_window: int):
     if index_df.empty or vix_df.empty:
         return pd.DataFrame(), None, None
 
-    a = index_df[["time", "Close"]].rename(columns={"Close": "Index"}).copy()
-    b = vix_df[["time", "Close"]].rename(columns={"Close": "VIX"}).copy()
-    a["time"] = pd.to_datetime(a["time"], utc=True, errors="coerce")
-    b["time"] = pd.to_datetime(b["time"], utc=True, errors="coerce")
-    a = a.dropna(subset=["time"]).sort_values("time")
-    b = b.dropna(subset=["time"]).sort_values("time")
+    def clean_price(df, out_col):
+        x = df[["time", "Close"]].copy()
+        x["time"] = pd.to_datetime(x["time"], utc=True, errors="coerce")
+        x = x.dropna(subset=["time", "Close"])
+        x = x.rename(columns={"Close": out_col})
+        x = x.groupby("time", as_index=False)[out_col].last()
+        return x.sort_values("time")
 
-    # Use merge_asof to handle slightly different timestamps.
-    merged = pd.merge_asof(a, b, on="time", direction="nearest")
+    a = clean_price(index_df, "Index")
+    b = clean_price(vix_df, "VIX")
+
+    merged = pd.merge_asof(
+        a.sort_values("time"),
+        b.sort_values("time"),
+        on="time",
+        direction="nearest",
+        suffixes=("", "_vix")
+    )
+
     merged["IndexRet"] = merged["Index"].pct_change()
     merged["VIXChg"] = merged["VIX"].pct_change()
 
@@ -701,18 +711,31 @@ def compute_correlations(index_df: pd.DataFrame, vix_df: pd.DataFrame, fg_hist: 
         merged["RollingCorr_Index_VIX"] = merged["IndexRet"].rolling(rolling_window).corr(merged["VIXChg"])
 
     corr_fg = None
-    if fg_hist is not None and not fg_hist.empty:
-        fg = fg_hist.copy()
+    if fg_hist is not None and not fg_hist.empty and "FearGreed" in fg_hist.columns:
+        fg = fg_hist[["time", "FearGreed"]].copy()
         fg["time"] = pd.to_datetime(fg["time"], utc=True, errors="coerce")
-        fg = fg.dropna(subset=["time"]).sort_values("time")
-        merged = pd.merge_asof(merged.sort_values("time"), fg, on="time", direction="nearest")
+        fg = fg.dropna(subset=["time", "FearGreed"])
+        fg = fg.groupby("time", as_index=False)["FearGreed"].last()
+        fg = fg.sort_values("time")
+
+        if "FearGreed" in merged.columns:
+            merged = merged.drop(columns=["FearGreed"])
+
+        merged = pd.merge_asof(
+            merged.sort_values("time"),
+            fg,
+            on="time",
+            direction="nearest",
+            suffixes=("", "_fg")
+        )
+
         merged["FGChg"] = merged["FearGreed"].diff()
+
         if merged[["IndexRet", "FGChg"]].dropna().shape[0] >= 5:
             corr_fg = float(merged["IndexRet"].corr(merged["FGChg"]))
             merged["RollingCorr_Index_FG"] = merged["IndexRet"].rolling(rolling_window).corr(merged["FGChg"])
 
     return merged, corr_vix, corr_fg
-
 
 def render_corr_chart(corr_df: pd.DataFrame) -> None:
     if corr_df.empty or "RollingCorr_Index_VIX" not in corr_df:
