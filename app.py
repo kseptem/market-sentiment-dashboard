@@ -1503,8 +1503,8 @@ vix_return = pct_change_text(vix_df)
 score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr_vix, index_return, vix_return)
 
 last_index = f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A"
-idx_ret = f"{index_return:+.2f}%" if index_return is not None else "N/A"
-vix_ret = f"{vix_return:+.2f}%" if vix_return is not None else "N/A"
+idx_ret = f"{index_return:+.2f}% window" if index_return is not None else "N/A"
+vix_ret = f"{vix_return:+.2f}% window" if vix_return is not None else "N/A"
 note_html = "<br>".join([f"• {x}" for x in signal_notes[:4]])
 
 # Row 1: VIX / Fear & Greed / Signal annotation
@@ -1567,12 +1567,12 @@ st.markdown(
       <div>
         <div class="compact-summary-note">{index_label}</div>
         <div class="compact-summary-value" style="font-size:20px;">{last_index}</div>
-        <div class="compact-summary-note">{idx_ret}</div>
+        <div class="compact-summary-note">{period} change: {idx_ret}</div>
       </div>
       <div>
         <div class="compact-summary-note">VIX / F&G</div>
         <div class="compact-summary-value" style="font-size:20px;">{vix_value:.1f} / {fg_value:.0f}</div>
-        <div class="compact-summary-note">VIX {vix_ret} · {fg_rating}</div>
+        <div class="compact-summary-note">VIX {period} change: {vix_ret}</div><div class="compact-summary-note">F&G: {fg_rating}</div>
         <div class="compact-summary-note">FG历史：{len(fg_history_table)} 天</div>
       </div>
     </div>
@@ -1609,6 +1609,9 @@ c2.metric("VIX", f"{vix_value:.2f}" if vix_value else "N/A",
           f"{vix_return:.2f}%" if vix_return is not None else None)
 c3.metric("CNN Fear & Greed", f"{fg_value:.0f}", fg_rating)
 c4.metric("Auto refresh", f"{refresh}s" if refresh else "Off")
+
+
+st.caption(f"顶部百分比为当前选择窗口（{period}）内的累计变化，不是单日涨跌。比如 1y change = 近一年从窗口起点到当前的变化。")
 
 st.plotly_chart(build_price_chart(index_df, vix_df, index_label), use_container_width=True)
 
@@ -1683,7 +1686,12 @@ with st.expander("查看原始相关性数据 · 字段说明"):
     if corr_df is None or corr_df.empty:
         st.write("No correlation data available.")
     else:
-        display_df = corr_df.tail(120).copy()
+        display_df = corr_df.copy()
+        if "time" in display_df.columns:
+            display_df = display_df.sort_values("time", ascending=False)
+        elif "date" in display_df.columns:
+            display_df = display_df.sort_values("date", ascending=False)
+        display_df = display_df.head(120)
         numeric_cols = display_df.select_dtypes(include=["float", "float64", "float32"]).columns
         display_df[numeric_cols] = display_df[numeric_cols].round(4)
         st.dataframe(display_df, use_container_width=True)
