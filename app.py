@@ -7,6 +7,7 @@ import pandas as pd
 import plotly.graph_objects as go
 import requests
 import streamlit as st
+import streamlit.components.v1 as components
 import yfinance as yf
 from streamlit_autorefresh import st_autorefresh
 
@@ -393,8 +394,10 @@ def fetch_cnn_fear_greed(manual_value: float) -> Tuple[float, str, str, pd.DataF
     This tries the commonly used CNN dataviz endpoint and falls back to manual value.
     """
     urls = [
-        "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
+        "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2020-01-01",
+        "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/2021-01-01",
         "https://production.dataviz.cnn.io/index/fearandgreed/graphdata/",
+        "https://production.dataviz.cnn.io/index/fearandgreed/graphdata",
     ]
 
     headers = {
@@ -454,7 +457,7 @@ def fetch_cnn_fear_greed(manual_value: float) -> Tuple[float, str, str, pd.DataF
     fallback_hist = pd.DataFrame(
         [{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": float(manual_value)}]
     )
-    return float(manual_value), "Manual fallback", f"CNN unavailable: {last_error}", fallback_hist
+    return float(manual_value), "Manual fallback", "Manual fallback · CNN blocked/unavailable", fallback_hist
 
 
 def vix_level(v: float):
@@ -548,40 +551,41 @@ def render_meter_card(kind: str, value: float, label: str, strategy: str, color:
 def render_playbook(title: str, accent_color: str, rows, current_idx: int, yellow=False):
     trs = ""
     for i, (rng, emotion, strategy) in enumerate(rows):
-        cls = "now-row-yellow" if yellow and i == current_idx else ("now-row" if i == current_idx else "")
-        badge_cls = "now-badge-yellow" if yellow else "now-badge"
-        now = f'<span class="{badge_cls}">NOW</span>' if i == current_idx else ""
+        bg = "#fefce8" if yellow and i == current_idx else ("#ecfdf5" if i == current_idx else "#ffffff")
+        badge_bg = "#eab308" if yellow else "#10b981"
+        now = f'<span style="background:{badge_bg};color:#fff;padding:5px 11px;border-radius:999px;font-size:13px;font-weight:900;">NOW</span>' if i == current_idx else ""
         trs += f"""
-        <tr class="{cls}">
-            <td style="color:{accent_color};font-weight:950;">{rng}</td>
-            <td>{emotion}</td>
-            <td>{strategy}</td>
-            <td style="text-align:right;">{now}</td>
+        <tr style="background:{bg};">
+            <td style="color:{accent_color};font-weight:950;padding:10px;border-bottom:1px solid #eef2f7;">{rng}</td>
+            <td style="font-weight:800;padding:10px;border-bottom:1px solid #eef2f7;">{emotion}</td>
+            <td style="font-weight:700;padding:10px;border-bottom:1px solid #eef2f7;">{strategy}</td>
+            <td style="text-align:right;padding:10px;border-bottom:1px solid #eef2f7;">{now}</td>
         </tr>
         """
 
-    st.markdown(
-        f"""
-<div class="playbook-title">
-  <span style="display:inline-block;width:52px;height:6px;background:{accent_color};border-radius:999px;margin-right:14px;vertical-align:middle;"></span>
-  {title} <span style="color:#94a3b8;font-size:16px;margin-left:10px;">指数区间 · 市场情绪 · 定投策略</span>
-</div>
-<div class="playbook-card">
-  <table class="playbook-table">
-    <thead>
-      <tr>
-        <th>指数区间</th>
-        <th>市场情绪</th>
-        <th>定投策略</th>
-        <th></th>
-      </tr>
-    </thead>
-    <tbody>{trs}</tbody>
-  </table>
-</div>
-""",
-        unsafe_allow_html=True,
-    )
+    html = f"""
+    <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;">
+      <div style="margin:18px 0 10px 0;font-size:21px;font-weight:950;color:#111827;">
+        <span style="display:inline-block;width:52px;height:6px;background:{accent_color};border-radius:999px;margin-right:14px;vertical-align:middle;"></span>
+        {title}
+        <span style="color:#94a3b8;font-size:16px;margin-left:10px;">指数区间 · 市场情绪 · 定投策略</span>
+      </div>
+      <div style="background:#fff;border:1px solid #d7dde8;border-radius:18px;padding:14px 20px 12px 20px;margin-bottom:24px;box-shadow:0 2px 12px rgba(17,24,39,0.035);">
+        <table style="width:100%;border-collapse:collapse;font-size:17px;">
+          <thead>
+            <tr>
+              <th style="color:#64748b;text-align:left;padding:9px 10px;font-weight:900;border-bottom:1px solid #e5e7eb;">指数区间</th>
+              <th style="color:#64748b;text-align:left;padding:9px 10px;font-weight:900;border-bottom:1px solid #e5e7eb;">市场情绪</th>
+              <th style="color:#64748b;text-align:left;padding:9px 10px;font-weight:900;border-bottom:1px solid #e5e7eb;">定投策略</th>
+              <th style="border-bottom:1px solid #e5e7eb;"></th>
+            </tr>
+          </thead>
+          <tbody>{trs}</tbody>
+        </table>
+      </div>
+    </div>
+    """
+    components.html(html, height=300, scrolling=False)
 
 
 def build_price_chart(index_df: pd.DataFrame, vix_df: pd.DataFrame, index_name: str):
@@ -806,7 +810,7 @@ st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
 st.markdown('<div class="pill">◆ DAILY MARKET PULSE</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-title">今日美股情绪观察</div>', unsafe_allow_html=True)
 st.markdown(
-    '<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">S&P 500 · VIX & CNN FEAR & GREED</b>'
+    '<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">US INDEX · VIX & CNN FEAR & GREED</b>'
     '　标普500 / 纳指 · 波动率指数 · 恐惧与贪婪指数</div>',
     unsafe_allow_html=True,
 )
