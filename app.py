@@ -299,6 +299,112 @@ div[data-testid="stMetricValue"] {
     font-weight: 900;
 }
 
+
+/* --- Compact dashboard override --- */
+.block-container {
+    padding-top: .6rem;
+    max-width: 1180px;
+}
+.main-title {
+    font-size: 34px;
+    margin-bottom: 4px;
+}
+.pill {
+    padding: 6px 16px;
+    font-size: 13px;
+    margin-bottom: 8px;
+}
+.date-pill {
+    padding: 6px 16px;
+    font-size: 13px;
+}
+.sub-title {
+    font-size: 14px;
+    margin-bottom: 14px;
+}
+.green-accent {
+    width: 44px;
+    height: 5px;
+}
+.metric-card {
+    padding: 16px 18px 14px 18px;
+    margin-bottom: 14px;
+    border-radius: 16px;
+}
+.metric-card h3 {
+    font-size: 17px;
+}
+.metric-card .desc {
+    font-size: 13px;
+}
+.big-number {
+    font-size: 52px;
+}
+.badge {
+    font-size: 14px;
+    padding: 7px 14px;
+    min-width: 110px;
+}
+.segment-wrap {
+    margin-top: 10px;
+}
+.segment-bar {
+    height: 18px;
+    margin: 6px 14px 6px 14px;
+}
+.segment {
+    height: 18px;
+}
+.pointer {
+    top: -15px;
+    border-left-width: 8px !important;
+    border-right-width: 8px !important;
+}
+.segment-labels {
+    margin: 0 14px;
+    font-size: 11px;
+}
+.strategy-box {
+    padding: 14px 18px;
+    margin: 0 0 14px 0;
+    border-radius: 16px;
+}
+.strategy-title {
+    font-size: 14px;
+}
+.strategy-main {
+    font-size: 25px;
+}
+.source-chip {
+    font-size: 11px;
+    padding: 3px 8px;
+}
+.compact-summary-card {
+    background:#fff;
+    border:1px solid #d7dde8;
+    border-radius:16px;
+    padding:14px 16px;
+    box-shadow:0 2px 12px rgba(17,24,39,0.035);
+    height:100%;
+}
+.compact-summary-title {
+    color:#64748b;
+    font-weight:900;
+    font-size:13px;
+    margin-bottom:6px;
+}
+.compact-summary-value {
+    font-size:26px;
+    color:#111827;
+    font-weight:950;
+    line-height:1.1;
+}
+.compact-summary-note {
+    color:#64748b;
+    font-size:12px;
+    margin-top:6px;
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -635,30 +741,29 @@ def render_playbook(title: str, accent_color: str, rows, current_idx: int, yello
     for i, (rng, emotion, strategy) in enumerate(rows):
         bg = "#fefce8" if yellow and i == current_idx else ("#ecfdf5" if i == current_idx else "#ffffff")
         badge_bg = "#eab308" if yellow else "#10b981"
-        now = f'<span style="background:{badge_bg};color:#fff;padding:5px 11px;border-radius:999px;font-size:13px;font-weight:900;">NOW</span>' if i == current_idx else ""
+        now = f'<span style="background:{badge_bg};color:#fff;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:900;">NOW</span>' if i == current_idx else ""
         trs += f"""
         <tr style="background:{bg};">
-            <td style="color:{accent_color};font-weight:950;padding:10px;border-bottom:1px solid #eef2f7;">{rng}</td>
-            <td style="font-weight:800;padding:10px;border-bottom:1px solid #eef2f7;">{emotion}</td>
-            <td style="font-weight:700;padding:10px;border-bottom:1px solid #eef2f7;">{strategy}</td>
-            <td style="text-align:right;padding:10px;border-bottom:1px solid #eef2f7;">{now}</td>
+            <td style="color:{accent_color};font-weight:950;padding:7px 8px;border-bottom:1px solid #eef2f7;white-space:nowrap;">{rng}</td>
+            <td style="font-weight:800;padding:7px 8px;border-bottom:1px solid #eef2f7;white-space:nowrap;">{emotion}</td>
+            <td style="font-weight:700;padding:7px 8px;border-bottom:1px solid #eef2f7;">{strategy}</td>
+            <td style="text-align:right;padding:7px 8px;border-bottom:1px solid #eef2f7;">{now}</td>
         </tr>
         """
 
     html = f"""
     <div style="font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','Helvetica Neue',Arial,sans-serif;">
-      <div style="margin:18px 0 10px 0;font-size:21px;font-weight:950;color:#111827;">
-        <span style="display:inline-block;width:52px;height:6px;background:{accent_color};border-radius:999px;margin-right:14px;vertical-align:middle;"></span>
+      <div style="margin:4px 0 8px 0;font-size:17px;font-weight:950;color:#111827;">
+        <span style="display:inline-block;width:34px;height:5px;background:{accent_color};border-radius:999px;margin-right:10px;vertical-align:middle;"></span>
         {title}
-        <span style="color:#94a3b8;font-size:16px;margin-left:10px;">指数区间 · 市场情绪 · 定投策略</span>
       </div>
-      <div style="background:#fff;border:1px solid #d7dde8;border-radius:18px;padding:14px 20px 12px 20px;margin-bottom:24px;box-shadow:0 2px 12px rgba(17,24,39,0.035);">
-        <table style="width:100%;border-collapse:collapse;font-size:17px;">
+      <div style="background:#fff;border:1px solid #d7dde8;border-radius:16px;padding:10px 12px;margin-bottom:8px;box-shadow:0 2px 12px rgba(17,24,39,0.035);">
+        <table style="width:100%;border-collapse:collapse;font-size:13px;">
           <thead>
             <tr>
-              <th style="color:#64748b;text-align:left;padding:9px 10px;font-weight:900;border-bottom:1px solid #e5e7eb;">指数区间</th>
-              <th style="color:#64748b;text-align:left;padding:9px 10px;font-weight:900;border-bottom:1px solid #e5e7eb;">市场情绪</th>
-              <th style="color:#64748b;text-align:left;padding:9px 10px;font-weight:900;border-bottom:1px solid #e5e7eb;">定投策略</th>
+              <th style="color:#64748b;text-align:left;padding:6px 8px;font-weight:900;border-bottom:1px solid #e5e7eb;">区间</th>
+              <th style="color:#64748b;text-align:left;padding:6px 8px;font-weight:900;border-bottom:1px solid #e5e7eb;">情绪</th>
+              <th style="color:#64748b;text-align:left;padding:6px 8px;font-weight:900;border-bottom:1px solid #e5e7eb;">策略</th>
               <th style="border-bottom:1px solid #e5e7eb;"></th>
             </tr>
           </thead>
@@ -667,7 +772,7 @@ def render_playbook(title: str, accent_color: str, rows, current_idx: int, yello
       </div>
     </div>
     """
-    components.html(html, height=300, scrolling=False)
+    components.html(html, height=250, scrolling=False)
 
 
 def build_price_chart(index_df: pd.DataFrame, vix_df: pd.DataFrame, index_name: str):
@@ -697,8 +802,8 @@ def build_price_chart(index_df: pd.DataFrame, vix_df: pd.DataFrame, index_name: 
         )
 
     fig.update_layout(
-        height=420,
-        margin=dict(l=10, r=10, t=30, b=10),
+        height=320,
+        margin=dict(l=10, r=10, t=24, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
@@ -813,7 +918,7 @@ def build_corr_chart(corr_df: pd.DataFrame):
     fig.add_hline(y=0, line_dash="dash", line_width=1)
 
     fig.update_layout(
-        height=330,
+        height=260,
         margin=dict(l=10, r=10, t=30, b=10),
         legend=dict(orientation="h", yanchor="bottom", y=1.02, x=0),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -890,7 +995,7 @@ today = datetime.now().strftime("%Y · %m · %d / %a")
 # -----------------------------
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
 st.markdown('<div class="pill">◆ DAILY MARKET PULSE</div>', unsafe_allow_html=True)
-st.markdown('<div class="main-title">今日美股情绪观察-KSeptem</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">今日美股情绪观察</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">US INDEX · VIX & CNN FEAR & GREED</b>'
     '　标普500 / 纳指 · 波动率指数 · 恐惧与贪婪指数</div>',
@@ -899,54 +1004,86 @@ st.markdown(
 
 
 # -----------------------------
-# Top Metrics
+# Executive dashboard
 # -----------------------------
-render_meter_card(
-    "vix",
-    float(vix_value),
-    vix_label,
-    vix_strategy,
-    vix_color,
-    vix_pointer_pct(float(vix_value)),
-    source="Yahoo Finance / CBOE VIX",
-)
-
-render_meter_card(
-    "fg",
-    float(fg_value),
-    fg_label,
-    fg_strategy,
-    fg_color,
-    fg_pointer_pct(float(fg_value)),
-    source=fg_source,
-)
-
 strategy = combined_strategy(float(vix_value), float(fg_value))
-st.markdown(
-    f"""
+
+top_left, top_right = st.columns([2.2, 1], gap="large")
+
+with top_left:
+    c_vix, c_fg = st.columns(2, gap="medium")
+    with c_vix:
+        render_meter_card(
+            "vix",
+            float(vix_value),
+            vix_label,
+            vix_strategy,
+            vix_color,
+            vix_pointer_pct(float(vix_value)),
+            source="Yahoo Finance / CBOE VIX",
+        )
+    with c_fg:
+        render_meter_card(
+            "fg",
+            float(fg_value),
+            fg_label,
+            fg_strategy,
+            fg_color,
+            fg_pointer_pct(float(fg_value)),
+            source=fg_source,
+        )
+
+with top_right:
+    st.markdown(
+        f"""
 <div class="strategy-box">
   <div class="strategy-title">◆ TODAY'S STRATEGY · 今日策略</div>
   <div class="strategy-main">{strategy}</div>
 </div>
 """,
-    unsafe_allow_html=True,
-)
+        unsafe_allow_html=True,
+    )
 
+    index_return = pct_change_text(index_df)
+    vix_return = pct_change_text(vix_df)
 
-# -----------------------------
-# Playbooks
-# -----------------------------
-render_playbook("VIX PLAYBOOK", "#10b981", VIX_ROWS, vix_idx, yellow=False)
-render_playbook("FEAR & GREED PLAYBOOK", "#eab308", FG_ROWS, fg_idx, yellow=True)
+    last_index = f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A"
+    idx_ret = f"{index_return:+.2f}%" if index_return is not None else "N/A"
+    vix_ret = f"{vix_return:+.2f}%" if vix_return is not None else "N/A"
+
+    st.markdown(
+        f"""
+<div class="compact-summary-card">
+  <div class="compact-summary-title">核心数据</div>
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;">
+    <div>
+      <div class="compact-summary-note">{index_label}</div>
+      <div class="compact-summary-value" style="font-size:21px;">{last_index}</div>
+      <div class="compact-summary-note">{idx_ret}</div>
+    </div>
+    <div>
+      <div class="compact-summary-note">VIX / F&G</div>
+      <div class="compact-summary-value" style="font-size:21px;">{vix_value:.1f} / {fg_value:.0f}</div>
+      <div class="compact-summary-note">VIX {vix_ret} · {fg_rating}</div>
+    </div>
+  </div>
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
+st.markdown("### 策略区间")
+pb1, pb2 = st.columns(2, gap="medium")
+with pb1:
+    render_playbook("VIX PLAYBOOK", "#10b981", VIX_ROWS, vix_idx, yellow=False)
+with pb2:
+    render_playbook("FEAR & GREED PLAYBOOK", "#eab308", FG_ROWS, fg_idx, yellow=True)
 
 
 # -----------------------------
 # Charts and correlations
 # -----------------------------
 st.markdown("### 市场走势与波动率")
-index_return = pct_change_text(index_df)
-vix_return = pct_change_text(vix_df)
-
 c1, c2, c3, c4 = st.columns(4)
 c1.metric(index_label, f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A",
           f"{index_return:.2f}%" if index_return is not None else None)
