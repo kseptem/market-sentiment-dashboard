@@ -660,10 +660,41 @@ def fetch_fred_series(series_id: str, lookback_days: int = 900) -> pd.DataFrame:
         return pd.DataFrame()
 
 
-@st.cache_data(ttl=3600, show_spinner=False)
+@st.cache_data(ttl=300, show_spinner=False)
 def fetch_put_call_ratio():
-    # Stable public Put/Call APIs are inconsistent. Keep as optional placeholder.
-    return None, "N/A · source not configured"
+    """
+    SPY options Put/Call proxy using yfinance option chain.
+    This is NOT official CBOE total put/call ratio.
+    It estimates positioning by:
+        sum(SPY put option volume) / sum(SPY call option volume)
+    using the nearest listed expiry.
+    """
+    try:
+        spy = yf.Ticker("SPY")
+        expiries = spy.options
+        if not expiries:
+            return None, "No SPY option expiries"
+
+        expiry = expiries[0]
+        chain = spy.option_chain(expiry)
+
+        puts = chain.puts
+        calls = chain.calls
+
+        if puts is None or calls is None or puts.empty or calls.empty:
+            return None, f"No option chain data for {expiry}"
+
+        put_vol = pd.to_numeric(puts.get("volume"), errors="coerce").fillna(0).sum()
+        call_vol = pd.to_numeric(calls.get("volume"), errors="coerce").fillna(0).sum()
+
+        if call_vol <= 0:
+            return None, f"Call volume is zero for {expiry}"
+
+        pcr = float(put_vol / call_vol)
+        return pcr, f"SPY options proxy · expiry {expiry}"
+
+    except Exception as e:
+        return None, f"SPY options proxy failed: {e}"
 
 
 def latest_close(df):
@@ -739,13 +770,98 @@ def classify_real_yield(value):
 
 
 def classify_put_call(value):
+    """
+    SPY Put/Call Proxy interpretation.
+    Lower weight than official CBOE PCR because it is only SPY-nearest-expiry volume proxy.
+    """
     if value is None:
-        return "N/A", "Put/Call 自动源未配置，不参与评分", "#64748b", 0
-    if value > 1.1:
-        return "恐慌", "Put/Call > 1.1，期权市场偏恐慌，反向机会增加", "#10b981", 8
-    if value < 0.65:
-        return "贪婪", "Put/Call < 0.65，追涨情绪偏强，顶部风险上升", "#eab308", -8
-    return "中性", "Put/Call 处于中性区", "#3b82f6", 2
+        return "N/A", "SPY期权 Put/Call Proxy 暂无数据，不参与评分", "#64748b", 0
+    if value > 1.30:
+        return "明显恐慌", "SPY Put/Call Proxy > 1.30，看跌期权成交量显著高于看涨，反向机会增加", "#10b981", 5
+    if value > 1.05:
+        return "偏恐慌", "SPY Put/Call Proxy 1.05-1.30，保护性需求偏高", "#10b981", 3
+    if value < 0.55:
+        return "明显贪婪", "SPY Put/Call Proxy < 0.55，看涨成交过热，追涨风险上升", "#ef4444", -5
+    if value < 0.75:
+        return "偏贪婪", "SPY Put/Call Proxy 0.55-0.75，风险偏好偏强", "#eab308", -3
+    return "中性", "SPY Put/Call Proxy 处于中性区", "#3b82f6", 1
+
+
+
+def build_semi_quant_regime(score, macro_risk_summary, pro_risk_summary, divergence_info, pro_summary):
+    """
+    Semi-quant regime classification.
+    Combines:
+    - Composite score
+    - Macro risk
+    - Pro risk
+    - Divergence severity
+    - Trend filter
+    """
+    trend_label = pro_summary.get("Trend", {}).get("label", "N/A")
+    real_yield_label = pro_summary.get("Real Yield", {}).get("label", "N/A")
+    move_label = pro_summary.get("MOVE", {}).get("label", "N/A")
+    term_label = pro_summary.get("VIX3M/VIX", {}).get("label", "N/A")
+    breadth_label = pro_summary.get("RSP/SPY", {}).get("label", "N/A")
+    pc_label = pro_summary.get("Put/Call", {}).get("label", "N/A")
+
+    danger_count = 0
+    warn_count = 0
+
+    for obj in [macro_risk_summary, pro_risk_summary]:
+        if obj.get("level") == "red":
+            danger_count += 1
+        elif obj.get("level") == "yellow":
+            warn_count += 1
+
+    if divergence_info.get("level") == "high":
+        danger_count += 1
+    elif divergence_info.get("level") == "medium":
+        warn_count += 1
+
+    if score >= 75 and danger_count == 0:
+        regime = "Risk-On Accumulation"
+        cn = "风险偏好健康 · 可进攻"
+        action = "维持或小幅提高VOO/SPY仓位，分批执行，不追单日大阳线。"
+        color = "green"
+    elif score >= 55 and danger_count == 0:
+        regime = "Neutral Uptrend"
+        cn = "中性偏多 · 定投优先"
+        action = "维持常规定投；若出现回调，可分批补仓。"
+        color = "green"
+    elif score >= 40 and danger_count <= 1:
+        regime = "Caution / Late Risk-On"
+        cn = "谨慎区 · 降低追高"
+        action = "降低新增买入力度，等待VIX/信用/美元信号改善。"
+        color = "yellow"
+    elif score >= 25:
+        regime = "Risk-Off Defense"
+        cn = "防守区 · 控制仓位"
+        action = "减少追高，保留现金，优先等待恐慌释放后的分批机会。"
+        color = "red"
+    else:
+        regime = "Stress / De-risk"
+        cn = "压力区 · 去风险"
+        action = "暂停追高，控制权益暴露；仅在极端恐慌且信用稳定时分批低吸。"
+        color = "red"
+
+    detail = [
+        f"Trend趋势：{trend_label}",
+        f"Real Yield真实利率：{real_yield_label}",
+        f"MOVE债券波动：{move_label}",
+        f"VIX期限结构：{term_label}",
+        f"市场宽度RSP/SPY：{breadth_label}",
+        f"SPY Put/Call Proxy：{pc_label}",
+    ]
+
+    return {
+        "regime": regime,
+        "cn": cn,
+        "action": action,
+        "color": color,
+        "detail": detail,
+    }
+
 
 
 def build_pro_summary(pro_summary):
@@ -1019,7 +1135,7 @@ pro_summary["Real Yield"] = {"value": real_yield_val, "display": f"{real_yield_v
 
 put_call_val, put_call_source = fetch_put_call_ratio()
 pc_label, pc_note, pc_color, pc_score = classify_put_call(put_call_val)
-pro_summary["Put/Call"] = {"value": put_call_val, "display": f"{put_call_val:.2f}" if put_call_val is not None else "N/A", "label": pc_label, "note": pc_note, "color": pc_color, "score": pc_score, "change": None}
+pro_summary["Put/Call"] = {"value": put_call_val, "display": f"{put_call_val:.2f}" if put_call_val is not None else "N/A", "label": pc_label, "note": pc_note + f" · {put_call_source}", "color": pc_color, "score": pc_score, "change": None}
 
 divergence_info = detect_macro_divergences(index_return, vix_return, macro_summary, corr)
 macro_risk_summary = build_macro_risk_summary(macro_summary)
@@ -1028,6 +1144,7 @@ pro_risk_summary = build_pro_summary(pro_summary)
 extended_summary = dict(macro_summary)
 extended_summary.update({k: {"label": v.get("label"), "note": v.get("note"), "score": v.get("score", 0), "change": v.get("change")} for k, v in pro_summary.items()})
 score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr, index_return, vix_return, extended_summary, divergence_info)
+semi_quant_regime = build_semi_quant_regime(score, macro_risk_summary, pro_risk_summary, divergence_info, pro_summary)
 
 today = datetime.now().strftime("%Y · %m · %d / %a")
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
@@ -1092,6 +1209,17 @@ st.markdown(
   <b>Macro Risk Summary · {macro_risk_summary.get("title")}</b><br>
   {macro_risk_summary.get("msg")}<br>
   <span style="font-size:12px;">{" · ".join(macro_risk_summary.get("detail", []))}</span>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+st.markdown(
+    f"""
+<div class="semiquant-box {semi_quant_regime.get("color")}">
+  <div class="semiquant-title">Semi-Quant Regime · 半量化市场状态：{semi_quant_regime.get("cn")} ({semi_quant_regime.get("regime")})</div>
+  <b>执行建议：</b>{semi_quant_regime.get("action")}<br>
+  <span style="font-size:12px;">{" · ".join(semi_quant_regime.get("detail", []))}</span>
 </div>
 """,
     unsafe_allow_html=True,
@@ -1197,7 +1325,7 @@ with st.expander("查看原始相关性数据 · 字段说明"):
 <b>DXY / 美元指数</b>：美元流动性指标，走强通常压制风险资产。<br>
 <b>HYG / 高收益债ETF</b>：信用风险 proxy，走弱代表信用端压力。<br>
 <b>LQD / 投资级债ETF</b>：利率/高等级信用压力 proxy。<br>
-<b>MOVE</b>：债券市场波动率，常领先股市风险。<br><b>VIX3M/VIX</b>：波动率期限结构，倒挂代表近端风险高。<br><b>Real Yield</b>：真实利率，越高越压制估值。<br><b>RSP/SPY</b>：等权/市值权重比值，衡量市场宽度。<br><b>Trend</b>：价格相对200日均线的趋势过滤器。<br><b>Put/Call</b>：期权仓位情绪；当前为预留项，未配置稳定数据源时不参与评分。<br><b>RollingCorr</b>：滚动相关性，判断价格与风险因子是否出现背离。
+<b>MOVE</b>：债券市场波动率，常领先股市风险。<br><b>VIX3M/VIX</b>：波动率期限结构，倒挂代表近端风险高。<br><b>Real Yield</b>：真实利率，越高越压制估值。<br><b>RSP/SPY</b>：等权/市值权重比值，衡量市场宽度。<br><b>Trend</b>：价格相对200日均线的趋势过滤器。<br><b>Put/Call Proxy</b>：用 yfinance 读取 SPY 最近一期 option chain，按 Put成交量/Call成交量估算；不是官方CBOE总Put/Call，因此权重较低。<br><b>RollingCorr</b>：滚动相关性，判断价格与风险因子是否出现背离。
 </div>
 """, unsafe_allow_html=True)
     if corr_df.empty:
