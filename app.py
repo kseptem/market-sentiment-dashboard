@@ -115,7 +115,7 @@ INDEX_MAP = {
 }
 MACRO_SYMBOLS = {"10Y Yield": "^TNX", "DXY": "DX-Y.NYB", "HYG": "HYG", "LQD": "LQD"}
 MACRO_DISPLAY_NAMES = {"10Y Yield": "10Y Yield · 美国10年期国债收益率", "DXY": "DXY · 美元指数", "HYG": "HYG · 高收益债信用风险", "LQD": "LQD · 投资级债/利率压力"}
-PERIOD_OPTIONS = ["3d", "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
+PERIOD_OPTIONS = ["实时盘中", "3d", "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
 INTERVAL_OPTIONS = ["1d", "60m", "30m", "15m", "5m", "1m"]
 FG_HISTORY_PATH = Path("fg_history.csv")
 
@@ -752,23 +752,38 @@ def build_corr_chart(corr_df):
 with st.sidebar:
     st.markdown("### Dashboard Settings")
     index_label = st.selectbox("Market index", list(INDEX_MAP.keys()), index=0)
-    period = st.selectbox("History window", PERIOD_OPTIONS, index=0)
+    period = st.selectbox("History window", PERIOD_OPTIONS, index=1)
     interval = st.selectbox("Interval", INTERVAL_OPTIONS, index=0)
     rolling_window = st.slider("Rolling correlation window", 5, 120, 30, 5)
     refresh = st.slider("Auto refresh seconds", 0, 600, 120, 15)
     manual_fg = st.number_input("Manual Fear & Greed fallback", 0, 100, 50, 1)
-    collect_fg_now = st.button("实时采集 Fear & Greed 当前值", use_container_width=True)
-    st.caption("FG历史来自 repo 中的 fg_history.csv；本地 collector 每晚更新并 push。按钮可立即采集当前值并写入本地 CSV。")
+    collect_fg_now = st.button("立即写入 Fear & Greed 当前值到历史CSV", use_container_width=True)
+    st.caption("选择「实时盘中」可分钟级查看盘中最新值；相关性/宏观趋势仍使用日线。FG历史来自 repo 中的 fg_history.csv，本地 collector 每晚更新并 push。")
 
 if refresh:
     st_autorefresh(interval=refresh * 1000, key="market-refresh")
 
 symbol = INDEX_MAP[index_label]
-index_df = fetch_yahoo(symbol, period, interval)
-vix_df = fetch_yahoo("^VIX", period, interval)
-macro_data = {name: fetch_yahoo(sym, period, interval) for name, sym in MACRO_SYMBOLS.items()}
 
-vix_value = safe_float(vix_df["Close"].iloc[-1], 0) if not vix_df.empty else 0
+# Display mode:
+# - "实时盘中": use intraday 1m data for top cards and the main price chart.
+# - Analytics mode: always use daily bars for correlation, macro trends, and signal structure.
+is_live_mode = period == "实时盘中"
+display_period = "1d" if is_live_mode else period
+display_interval = "1m" if is_live_mode else interval
+
+analytics_period = "3d" if is_live_mode else period
+analytics_interval = "1d"
+
+index_df_display = fetch_yahoo(symbol, display_period, display_interval)
+vix_df_display = fetch_yahoo("^VIX", display_period, display_interval)
+macro_data_display = {name: fetch_yahoo(sym, display_period, display_interval) for name, sym in MACRO_SYMBOLS.items()}
+
+index_df = fetch_yahoo(symbol, analytics_period, analytics_interval)
+vix_df = fetch_yahoo("^VIX", analytics_period, analytics_interval)
+macro_data = {name: fetch_yahoo(sym, analytics_period, analytics_interval) for name, sym in MACRO_SYMBOLS.items()}
+
+vix_value = safe_float(vix_df_display["Close"].iloc[-1], 0) if not vix_df_display.empty else (safe_float(vix_df["Close"].iloc[-1], 0) if not vix_df.empty else 0)
 fg_value, fg_rating, fg_source, _fg_live = fetch_fear_greed_with_fallback(float(manual_fg))
 fg_history_table = build_fg_history_for_app(float(fg_value), str(fg_rating), str(fg_source))
 
@@ -781,16 +796,18 @@ if collect_fg_now:
 
 fg_hist = fg_history_for_correlation(fg_history_table)
 
-index_return, vix_return = pct_change_text(index_df), pct_change_text(vix_df)
-macro_changes = {name: pct_change_text(df) for name, df in macro_data.items()}
+index_return, vix_return = pct_change_text(index_df_display), pct_change_text(vix_df_display)
+macro_changes = {name: pct_change_text(df) for name, df in macro_data_display.items()}
 
 corr_df, corr = compute_correlations(index_df, vix_df, fg_hist, macro_data, rolling_window)
 
 macro_summary = {}
-for name, df in macro_data.items():
-    if df.empty:
+for name, df_daily in macro_data.items():
+    df_live = macro_data_display.get(name, pd.DataFrame())
+    df_for_latest = df_live if df_live is not None and not df_live.empty else df_daily
+    if df_for_latest.empty:
         continue
-    last = safe_float(df["Close"].iloc[-1], 0)
+    last = safe_float(df_for_latest["Close"].iloc[-1], 0)
     chg = macro_changes.get(name)
     if name == "10Y Yield":
         y, label, note, color, score = classify_10y(last)
@@ -815,9 +832,10 @@ today = datetime.now().strftime("%Y · %m · %d / %a")
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
 st.markdown('<div class="pill">◆ VOO / SPY MACRO RISK DASHBOARD</div>', unsafe_allow_html=True)
 st.markdown('<div class="main-title">大盘 ETF 投资观测系统</div>', unsafe_allow_html=True)
-st.markdown('<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">Price · VIX · Fear & Greed · Rates · USD · Credit</b>　价格 / 波动 / 情绪 / 利率 / 美元 / 信用</div>', unsafe_allow_html=True)
+mode_text = "实时盘中 · 分钟级展示 / 日线计算" if is_live_mode else f"{period} · 日线计算"
+st.markdown(f'<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">Price · VIX · Fear & Greed · Rates · USD · Credit</b>　价格 / 波动 / 情绪 / 利率 / 美元 / 信用　<span class="source-chip">{mode_text}</span></div>', unsafe_allow_html=True)
 
-last_index = f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A"
+last_index = f"{index_df_display['Close'].iloc[-1]:,.2f}" if not index_df_display.empty else (f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A")
 idx_ret = f"{index_return:+.2f}% window" if index_return is not None else "N/A"
 vix_ret = f"{vix_return:+.2f}% window" if vix_return is not None else "N/A"
 note_html = "<br>".join([f"• {x}" for x in signal_notes[:5]])
@@ -906,8 +924,8 @@ m1.metric(index_label, last_index, f"{period} change: {idx_ret}")
 m2.metric("VIX", f"{vix_value:.2f}", f"{period} change: {vix_ret}")
 m3.metric("CNN Fear & Greed", f"{fg_value:.0f}", fg_rating)
 m4.metric("Auto refresh", f"{refresh}s" if refresh else "Off")
-st.caption(f"顶部百分比为当前选择窗口（{period}）内累计变化，不是单日涨跌。3d 为用 5d 数据裁剪最近 3 天。")
-st.plotly_chart(build_price_chart(index_df, vix_df, index_label), use_container_width=True)
+st.caption(f"顶部百分比为当前展示窗口（{period}）内累计变化；实时盘中模式使用分钟级数据展示最新值，但相关性与宏观趋势仍使用日线历史数据计算。")
+st.plotly_chart(build_price_chart(index_df_display if not index_df_display.empty else index_df, vix_df_display if not vix_df_display.empty else vix_df, index_label), use_container_width=True)
 
 st.markdown("### Macro Trends · 宏观趋势")
 st.plotly_chart(build_macro_trend_chart(macro_data), use_container_width=True)
