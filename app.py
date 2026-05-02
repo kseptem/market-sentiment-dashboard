@@ -163,7 +163,7 @@ html, body, [class*="css"] {
 .segment-bar {
     position:relative;
     display:grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     gap:2px;
     height:25px;
     margin: 8px 24px 8px 24px;
@@ -187,7 +187,7 @@ html, body, [class*="css"] {
 
 .segment-labels {
     display:grid;
-    grid-template-columns: repeat(5, 1fr);
+    grid-template-columns: repeat(7, 1fr);
     gap:2px;
     margin:0 24px;
     text-align:center;
@@ -496,19 +496,23 @@ PERIOD_OPTIONS = ["5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
 INTERVAL_OPTIONS = ["1m", "5m", "15m", "30m", "60m", "1d"]
 
 VIX_ROWS = [
-    ("< 12", "极度乐观", "谨慎追高，保持警觉"),
-    ("12 — 20", "正常区间", "常规定投，保持节奏"),
-    ("20 — 30", "恐惧上升", "加大定投，分批买入"),
-    ("30 — 50", "市场恐慌", "加倍定投，逢低布局"),
-    ("> 50", "极度恐慌", "黄金机会，大胆抄底"),
+    ("< 11", "Vol Suppression", "停止追高，保留现金"),
+    ("11 — 14", "Risk-On", "正常配置，顺势持有"),
+    ("14 — 18", "Neutral", "常规定投，保持节奏"),
+    ("18 — 25", "Early Stress", "放慢加仓，观察波动"),
+    ("25 — 35", "Risk-Off", "分批加仓，逢低布局"),
+    ("35 — 50", "Panic", "强力加仓，但保留现金"),
+    ("> 50", "Liquidation", "分批抄底，严控节奏"),
 ]
 
 FG_ROWS = [
-    ("0 — 24", "极度恐惧", "黄金机会，加倍买入"),
-    ("25 — 44", "恐惧", "加大定投，分批布局"),
-    ("45 — 55", "中性", "常规定投，保持节奏"),
-    ("56 — 75", "贪婪", "谨慎追高，控制仓位"),
-    ("76 — 100", "极度贪婪", "警惕回调，部分止盈"),
+    ("0 — 15", "Capitulation", "激进加仓"),
+    ("15 — 30", "Deep Fear", "加仓，分批买入"),
+    ("30 — 45", "Fear", "正常定投，等待修复"),
+    ("45 — 60", "Neutral", "保持节奏，观察趋势"),
+    ("60 — 75", "Greed", "控制仓位，不追高"),
+    ("75 — 85", "Euphoria", "减速买入，部分止盈"),
+    ("85 — 100", "Bubble Zone", "明确止盈，降低风险"),
 ]
 
 
@@ -719,60 +723,86 @@ def fetch_fear_greed_with_fallback(manual_value: float) -> Tuple[float, str, str
 
 
 def vix_level(v: float):
-    if v < 12:
-        return "极度乐观", "谨慎追高，保持警觉", "#10b981", 0
-    if v < 20:
-        return "正常波动", "常规定投，保持节奏", "#10b981", 1
-    if v < 30:
-        return "恐惧上升", "加大定投，分批买入", "#eab308", 2
+    if v < 11:
+        return "压波动", "停止追高，保留现金", "#10b981", 0
+    if v < 14:
+        return "Risk-On", "正常配置，顺势持有", "#10b981", 1
+    if v < 18:
+        return "健康中性", "常规定投，保持节奏", "#10b981", 2
+    if v < 25:
+        return "早期压力", "放慢加仓，观察波动", "#eab308", 3
+    if v < 35:
+        return "Risk-Off", "分批加仓，逢低布局", "#f97316", 4
     if v < 50:
-        return "市场恐慌", "加倍定投，逢低布局", "#f97316", 3
-    return "极度恐慌", "黄金机会，大胆抄底", "#ef4444", 4
+        return "恐慌", "强力加仓，但保留现金", "#ef4444", 5
+    return "流动性踩踏", "分批抄底，严控节奏", "#991b1b", 6
 
 
 def fear_greed_level(v: float):
-    if v <= 24:
-        return "极度恐惧", "黄金机会，加倍买入", "#ef4444", 0
-    if v <= 44:
-        return "恐惧", "加大定投，分批布局", "#f97316", 1
-    if v <= 55:
-        return "中性", "常规定投，保持节奏", "#3b82f6", 2
+    if v <= 15:
+        return "投降", "激进加仓", "#ef4444", 0
+    if v <= 30:
+        return "深度恐惧", "加仓，分批买入", "#f97316", 1
+    if v <= 45:
+        return "恐惧", "正常定投，等待修复", "#eab308", 2
+    if v <= 60:
+        return "中性", "保持节奏，观察趋势", "#3b82f6", 3
     if v <= 75:
-        return "贪婪", "谨慎追高，控制仓位", "#eab308", 3
-    return "极度贪婪", "警惕回调，部分止盈", "#ec4899", 4
+        return "贪婪", "控制仓位，不追高", "#eab308", 4
+    if v <= 85:
+        return "亢奋", "减速买入，部分止盈", "#f97316", 5
+    return "泡沫区", "明确止盈，降低风险", "#ec4899", 6
 
 
 def vix_pointer_pct(v: float) -> float:
-    # visual scale for <12, 12-20, 20-30, 30-50, >50
-    if v <= 0:
-        return 0
-    if v < 12:
-        return max(2, min(19, v / 12 * 20))
-    if v < 20:
-        return 20 + (v - 12) / 8 * 20
-    if v < 30:
-        return 40 + (v - 20) / 10 * 20
+    # visual scale for <11, 11-14, 14-18, 18-25, 25-35, 35-50, >50
+    bounds = [0, 11, 14, 18, 25, 35, 50, 80]
+    seg = 100 / 7
+    if v < 11:
+        return max(2, min(seg - 1, (v / 11) * seg))
+    if v < 14:
+        return seg * 1 + (v - 11) / 3 * seg
+    if v < 18:
+        return seg * 2 + (v - 14) / 4 * seg
+    if v < 25:
+        return seg * 3 + (v - 18) / 7 * seg
+    if v < 35:
+        return seg * 4 + (v - 25) / 10 * seg
     if v < 50:
-        return 60 + (v - 30) / 20 * 20
-    return min(98, 80 + (min(v, 80) - 50) / 30 * 20)
+        return seg * 5 + (v - 35) / 15 * seg
+    return min(98, seg * 6 + (min(v, 80) - 50) / 30 * seg)
 
 
 def fg_pointer_pct(v: float) -> float:
-    return max(1, min(99, v))
+    # visual scale for 0-15, 15-30, 30-45, 45-60, 60-75, 75-85, 85-100
+    seg = 100 / 7
+    if v <= 15:
+        return max(2, v / 15 * seg)
+    if v <= 30:
+        return seg * 1 + (v - 15) / 15 * seg
+    if v <= 45:
+        return seg * 2 + (v - 30) / 15 * seg
+    if v <= 60:
+        return seg * 3 + (v - 45) / 15 * seg
+    if v <= 75:
+        return seg * 4 + (v - 60) / 15 * seg
+    if v <= 85:
+        return seg * 5 + (v - 75) / 10 * seg
+    return min(98, seg * 6 + (v - 85) / 15 * seg)
 
 
 def render_meter_card(kind: str, value: float, label: str, strategy: str, color: str, pointer_pct: float, source: str = ""):
     if kind == "vix":
         title = "VIX · S&P 500"
         desc = "波动率指数"
-        labels = ["< 12", "12-20", "20-30", "30-50", "> 50"]
-        seg_colors = ["#fde7b3", "#10b981", "#fde7b3", "#fde7b3", "#f8b4c2"]
+        labels = ["<11", "11-14", "14-18", "18-25", "25-35", "35-50", ">50"]
+        seg_colors = ["#d1fae5", "#10b981", "#86efac", "#fde68a", "#fdba74", "#fca5a5", "#f8b4c2"]
         accent = "#10b981"
     else:
         title = "FEAR & GREED · CNN"
         desc = "恐惧与贪婪指数"
-        labels = ["0-24", "25-44", "45-55", "56-75", "76-100"]
-        seg_colors = ["#f8b4c2", "#fde7b3", "#bfd3ff", "#eab308", "#f8b4c2"]
+        labels = ["0-15", "15-30", "30-45", "45-60", "60-75", "75-85", "85-100"]
+        seg_colors = ["#f8b4c2", "#fdba74", "#fde68a", "#bfd3ff", "#eab308", "#fb923c", "#f472b6"]
         accent = "#eab308"
 
     seg_html = "".join([f'<div class="segment" style="background:{c};"></div>' for c in seg_colors])
@@ -1011,89 +1041,140 @@ def pct_change_text(df: pd.DataFrame):
 
 
 
-def market_signal_engine(vix_value: float, fg_value: float, corr_vix: Optional[float] = None):
+def market_signal_engine(vix_value: float, fg_value: float, corr_vix: Optional[float] = None, index_return: Optional[float] = None, vix_return: Optional[float] = None):
     """
-    Returns score, signal, risk level, and explanations.
+    Professional signal engine.
     Score range: 0-100. Higher means better risk/reward for incremental buying.
+    Also returns suggested equity exposure range.
     """
-    score = 55
+    score = 50
     notes = []
+    tags = []
 
-    # VIX contribution
-    if vix_value < 12:
-        score -= 10
-        notes.append("VIX 低于 12，市场过于平静，容易出现追高风险。")
-    elif vix_value < 20:
-        score += 5
-        notes.append("VIX 处于 12-20 正常波动区间，市场风险可控。")
-    elif vix_value < 30:
-        score += 10
-        notes.append("VIX 进入 20-30，恐惧上升但未失控，适合分批布局。")
+    # VIX regime
+    if vix_value < 11:
+        score -= 14
+        notes.append("VIX < 11：波动被压得很低，常见于强牛市后段或过度平静期，追高性价比下降。")
+    elif vix_value < 14:
+        score -= 4
+        notes.append("VIX 11-14：Risk-On 环境，适合持有，但新增仓位不宜太激进。")
+    elif vix_value < 18:
+        score += 6
+        notes.append("VIX 14-18：健康中性波动区，市场结构较稳定，适合常规定投。")
+    elif vix_value < 25:
+        score += 8
+        notes.append("VIX 18-25：早期压力区，波动开始抬头，适合放慢节奏、等待更好价格。")
+    elif vix_value < 35:
+        score += 18
+        notes.append("VIX 25-35：Risk-Off，恐惧释放中，长期资金可以分批加仓。")
     elif vix_value < 50:
-        score += 20
-        notes.append("VIX 进入 30-50，市场恐慌显著，长期资金可关注逢低机会。")
+        score += 26
+        notes.append("VIX 35-50：市场恐慌，机会开始变大，但需要分批执行、保留现金。")
     else:
-        score += 25
-        notes.append("VIX 超过 50，属于极端恐慌区，历史上常出现高风险高回报窗口。")
+        score += 30
+        notes.append("VIX > 50：可能是流动性踩踏，不适合 All-in，但通常进入长期赔率较高区域。")
 
-    # Fear & Greed contribution
-    if fg_value <= 24:
-        score += 22
-        notes.append("Fear & Greed 处于极度恐惧，情绪反转价值较高。")
-    elif fg_value <= 44:
-        score += 12
-        notes.append("Fear & Greed 处于恐惧区，适合分批买入。")
-    elif fg_value <= 55:
-        score += 3
-        notes.append("Fear & Greed 中性，适合按计划执行。")
+    # Fear & Greed regime
+    if fg_value <= 15:
+        score += 26
+        notes.append("Fear & Greed 0-15：投降区，反向配置价值很高。")
+    elif fg_value <= 30:
+        score += 18
+        notes.append("Fear & Greed 15-30：深度恐惧，适合加仓但要分批。")
+    elif fg_value <= 45:
+        score += 8
+        notes.append("Fear & Greed 30-45：恐惧区，适合正常定投等待情绪修复。")
+    elif fg_value <= 60:
+        score += 2
+        notes.append("Fear & Greed 45-60：中性区，按计划执行，不需要大幅调整。")
     elif fg_value <= 75:
         score -= 8
-        notes.append("Fear & Greed 处于贪婪区，继续上涨可能但不宜追高。")
-    else:
+        notes.append("Fear & Greed 60-75：贪婪区，上涨趋势可能延续，但新增仓位要克制。")
+    elif fg_value <= 85:
         score -= 18
-        notes.append("Fear & Greed 极度贪婪，短期回撤风险上升。")
+        notes.append("Fear & Greed 75-85：亢奋区，FOMO 风险升高，适合减速买入或小幅止盈。")
+    else:
+        score -= 28
+        notes.append("Fear & Greed > 85：泡沫区，短期回撤风险显著上升。")
 
-    # Correlation contribution
+    # Combo signals
+    if vix_value < 14 and fg_value > 80:
+        score -= 18
+        tags.append("顶部风险")
+        notes.append("组合信号：VIX 很低 + 情绪极度贪婪，属于典型顶部风险结构。")
+    if vix_value > 30 and fg_value < 25:
+        score += 20
+        tags.append("抄底窗口")
+        notes.append("组合信号：VIX > 30 + Fear & Greed < 25，恐慌充分释放，适合分批抄底。")
+    if vix_value > 25 and fg_value > 60:
+        score -= 10
+        tags.append("风险背离")
+        notes.append("组合信号：VIX 偏高但情绪仍贪婪，说明市场可能低估风险。")
+    if 14 <= vix_value < 20 and 45 <= fg_value <= 70:
+        tags.append("健康风险偏好")
+        notes.append("组合信号：波动正常、情绪中性偏积极，属于相对健康的 Risk-On 环境。")
+
+    # Correlation
     if corr_vix is not None and not np.isnan(corr_vix):
         if corr_vix > -0.3:
-            score -= 15
-            notes.append("指数与 VIX 的负相关明显减弱，可能出现上涨但风险同步上升的背离。")
+            score -= 16
+            tags.append("价格-波动背离")
+            notes.append("相关性信号：指数与 VIX 负相关明显减弱，可能出现上涨但风险同步上升的假行情。")
         elif corr_vix > -0.6:
-            score -= 6
-            notes.append("指数与 VIX 相关性偏弱，需要警惕波动结构变化。")
+            score -= 7
+            notes.append("相关性信号：指数与 VIX 负相关偏弱，建议观察是否出现波动结构变化。")
         elif corr_vix < -0.95:
-            score -= 3
-            notes.append("指数与 VIX 负相关极强，市场共识较拥挤，短期可能出现反向波动。")
+            score -= 4
+            notes.append("相关性信号：指数与 VIX 负相关极强，交易拥挤，短期可能出现反向波动。")
         else:
-            score += 4
-            notes.append("指数与 VIX 保持正常强负相关，市场结构较健康。")
+            score += 5
+            notes.append("相关性信号：指数与 VIX 保持正常强负相关，市场结构较健康。")
     else:
         notes.append("相关性样本不足，当前信号主要基于 VIX 与 Fear & Greed。")
 
+    # Fake rally condition
+    if index_return is not None and vix_return is not None:
+        if index_return > 0 and vix_return > 0:
+            score -= 10
+            tags.append("假上涨警报")
+            notes.append("当期指数上涨但 VIX 同时上升，说明上涨质量可能不好，需要谨慎追高。")
+        elif index_return > 0 and vix_return < 0:
+            score += 3
+            notes.append("当期指数上涨且 VIX 下降，上涨质量较健康。")
+
     score = int(max(0, min(100, score)))
 
-    if score >= 78:
+    # Position sizing suggestion for equity exposure
+    if score >= 82:
         signal = "强机会区"
         level = "opportunity"
-        action = "加大定投 · 分批买入 · 保留现金"
-    elif score >= 62:
+        action = "强力分批加仓 · 但避免一次性 All-in"
+        position = "75% — 90%"
+    elif score >= 68:
         signal = "偏进攻"
         level = "constructive"
-        action = "小幅加仓 · 继续定投 · 等确认"
-    elif score >= 45:
+        action = "加大定投 · 分批买入 · 保留现金"
+        position = "60% — 75%"
+    elif score >= 50:
         signal = "中性健康"
         level = "normal"
         action = "常规定投 · 保持节奏 · 不追高"
-    elif score >= 30:
+        position = "45% — 60%"
+    elif score >= 35:
         signal = "偏防守"
         level = "caution"
-        action = "减半定投 · 控制仓位 · 等回调"
+        action = "减速买入 · 控制仓位 · 等回调"
+        position = "30% — 45%"
     else:
         signal = "高风险"
         level = "risk"
-        action = "暂停追高 · 部分止盈 · 等风险释放"
+        action = "暂停追高 · 部分止盈 · 提高现金"
+        position = "15% — 30%"
 
-    return score, signal, level, action, notes
+    if not tags:
+        tags = [signal]
+
+    return score, signal, level, action, position, tags, notes
 
 
 def annotation_class(level: str):
@@ -1173,7 +1254,9 @@ corr_df, corr_vix, corr_fg = compute_correlations(index_df, vix_df, fg_hist, rol
 # -----------------------------
 # Executive dashboard
 # -----------------------------
-score, signal, signal_level, strategy, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr_vix)
+index_return = pct_change_text(index_df)
+vix_return = pct_change_text(vix_df)
+score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr_vix, index_return, vix_return)
 
 top_left, top_right = st.columns([2.2, 1], gap="large")
 
@@ -1210,19 +1293,18 @@ with top_right:
     <div>
       <div class="signal-label">{signal}</div>
       <div class="compact-summary-note">0-100 越高代表越适合增量买入</div>
+      <div class="compact-summary-note">建议权益仓位：<b>{position_suggestion}</b></div>
     </div>
   </div>
 </div>
 <div class="strategy-box">
   <div class="strategy-title">◆ TODAY'S STRATEGY · 今日策略</div>
   <div class="strategy-main">{strategy}</div>
+  <div class="compact-summary-note" style="margin-top:8px;">信号标签：{" · ".join(signal_tags)}</div>
 </div>
 """,
         unsafe_allow_html=True,
     )
-
-    index_return = pct_change_text(index_df)
-    vix_return = pct_change_text(vix_df)
 
     last_index = f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A"
     idx_ret = f"{index_return:+.2f}%" if index_return is not None else "N/A"
@@ -1325,7 +1407,9 @@ with st.expander("查看原始相关性数据 · 字段说明"):
 <b>VIXChg</b>：VIX 日变化率。<br>
 <b>RollingCorr_Index_VIX</b>：指数收益率与 VIX 变化率的滚动相关性，通常应为负值。<br>
 <b>FearGreed</b>：CNN 恐惧与贪婪指数；如果使用 Finhacker fallback，只有最新值，历史列可能为空。<br>
-<b>FGChg</b>：Fear & Greed 的日变化。历史数据不足时可能为空。
+<b>FGChg</b>：Fear & Greed 的日变化。历史数据不足时可能为空。<br>
+<b>Market Signal Score</b>：综合 VIX、Fear & Greed、相关性和价格-波动背离后的 0-100 分；越高代表越适合增量买入。<br>
+<b>仓位建议</b>：这里指权益类资产目标仓位区间，不是单只股票仓位。
 </div>
 """,
         unsafe_allow_html=True,
