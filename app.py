@@ -542,6 +542,169 @@ div[data-testid="stMetricValue"] {
     }
 }
 
+
+/* --- Mobile optimization --- */
+.mobile-playbook { display:none; }
+.desktop-playbook { display:block; }
+
+@media (max-width: 760px) {
+    .block-container {
+        padding-left: .65rem;
+        padding-right: .65rem;
+        padding-top: .25rem;
+        max-width: 100%;
+    }
+    header, footer { visibility: hidden; height: 0; }
+    .main-title {
+        font-size: 24px;
+        line-height: 1.12;
+        margin-top: 0;
+        margin-bottom: 4px;
+    }
+    .pill, .date-pill { display:none; }
+    .sub-title {
+        font-size: 12px;
+        margin-bottom: 8px;
+        line-height: 1.25;
+    }
+    .green-accent {
+        width: 28px;
+        height: 4px;
+        margin-right: 8px;
+    }
+
+    .metric-card {
+        min-height: 0 !important;
+        padding: 10px 10px 9px 10px;
+        margin-bottom: 8px;
+        border-radius: 14px;
+    }
+    .metric-card h3 {
+        font-size: 14px;
+        line-height: 1.1;
+    }
+    .metric-card .desc,
+    .source-chip {
+        display:none;
+    }
+    .big-number {
+        font-size: 38px;
+        letter-spacing: -1px;
+    }
+    .badge {
+        font-size: 12px;
+        padding: 5px 9px;
+        min-width: 72px;
+        border-width: 1.5px;
+    }
+    .segment-wrap { margin-top: 4px; }
+    .segment-bar {
+        height: 12px;
+        margin: 4px 4px 4px 4px;
+    }
+    .segment { height: 12px; }
+    .pointer {
+        top: -12px;
+        border-left-width: 7px !important;
+        border-right-width: 7px !important;
+        border-top-width: 12px !important;
+    }
+    .segment-labels {
+        margin: 0 2px;
+        font-size: 8px;
+        gap:1px;
+    }
+
+    .strategy-grid {
+        display:block;
+        margin: 4px 0 8px 0;
+    }
+    .strategy-panel, .position-panel, .note-panel, .signal-card {
+        padding: 10px 12px;
+        border-radius: 14px;
+        margin-bottom: 8px;
+        min-height: 0 !important;
+    }
+    .strategy-panel .title, .compact-summary-title {
+        font-size: 12px;
+        margin-bottom: 4px;
+    }
+    .strategy-panel .main {
+        font-size: 21px;
+        line-height: 1.18;
+    }
+    .signal-score { font-size: 32px; }
+    .signal-label { font-size: 14px; }
+    .compact-summary-note { font-size: 11px; }
+    .compact-summary-value { font-size: 18px !important; }
+    .position-panel .v { font-size: 22px; }
+    .note-panel {
+        font-size: 12px;
+        line-height: 1.42;
+        max-height: 135px;
+        overflow:auto;
+    }
+
+    .desktop-playbook { display:none; }
+    .mobile-playbook { display:block; }
+    .mobile-playbook-title {
+        font-size: 16px;
+        font-weight: 950;
+        color:#111827;
+        margin: 8px 0 6px 0;
+    }
+    .mobile-playbook-card {
+        background:#fff;
+        border:1px solid #d7dde8;
+        border-radius:14px;
+        padding:8px 10px;
+        margin-bottom:6px;
+        display:grid;
+        grid-template-columns: 62px 1fr 82px;
+        gap:8px;
+        align-items:center;
+        box-shadow:0 1px 8px rgba(17,24,39,0.025);
+    }
+    .mobile-playbook-card.now {
+        background:#ecfdf5;
+        border-color:#a7f3d0;
+    }
+    .mobile-playbook-card.now-yellow {
+        background:#fefce8;
+        border-color:#fde68a;
+    }
+    .mobile-range {
+        font-size:14px;
+        font-weight:950;
+        white-space:nowrap;
+    }
+    .mobile-emotion {
+        font-size:13px;
+        font-weight:900;
+        color:#111827;
+    }
+    .mobile-strategy {
+        font-size:12px;
+        font-weight:750;
+        color:#334155;
+        line-height:1.25;
+        text-align:right;
+    }
+    .mobile-now {
+        display:inline-block;
+        margin-left:4px;
+        padding:2px 6px;
+        border-radius:999px;
+        color:white;
+        font-size:9px;
+        font-weight:900;
+    }
+
+    div[data-testid="stExpander"] { font-size: 12px; }
+    div[data-testid="stDataFrame"] { font-size: 11px; }
+    iframe { max-width: 100%; }
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -940,6 +1103,34 @@ def render_playbook(title: str, accent_color: str, rows, current_idx: int, yello
     </div>
     """
     components.html(html, height=335, scrolling=False)
+
+
+
+def render_mobile_playbook(title: str, accent_color: str, rows, current_idx: int, yellow=False):
+    cards = ""
+    for i, (rng, emotion, strategy) in enumerate(rows):
+        cls = "now-yellow" if yellow and i == current_idx else ("now" if i == current_idx else "")
+        now_bg = "#eab308" if yellow else "#10b981"
+        now = f'<span class="mobile-now" style="background:{now_bg};">NOW</span>' if i == current_idx else ""
+        cards += f"""
+        <div class="mobile-playbook-card {cls}">
+            <div class="mobile-range" style="color:{accent_color};">{rng}</div>
+            <div class="mobile-emotion">{emotion} {now}</div>
+            <div class="mobile-strategy">{strategy}</div>
+        </div>
+        """
+    st.markdown(
+        f"""
+<div class="mobile-playbook">
+  <div class="mobile-playbook-title">
+    <span style="display:inline-block;width:28px;height:4px;background:{accent_color};border-radius:999px;margin-right:8px;vertical-align:middle;"></span>
+    {title}
+  </div>
+  {cards}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
 
 
 def build_price_chart(index_df: pd.DataFrame, vix_df: pd.DataFrame, index_name: str):
@@ -1413,11 +1604,16 @@ st.markdown(
 
 # Row 3: playbooks
 st.markdown("### 策略区间")
+st.markdown('<div class="desktop-playbook">', unsafe_allow_html=True)
 pb1, pb2 = st.columns(2, gap="medium")
 with pb1:
     render_playbook("VIX PLAYBOOK", "#10b981", VIX_ROWS, vix_idx, yellow=False)
 with pb2:
     render_playbook("FEAR & GREED PLAYBOOK", "#eab308", FG_ROWS, fg_idx, yellow=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+render_mobile_playbook("VIX PLAYBOOK", "#10b981", VIX_ROWS, vix_idx, yellow=False)
+render_mobile_playbook("FEAR & GREED PLAYBOOK", "#eab308", FG_ROWS, fg_idx, yellow=True)
 
 
 # -----------------------------
