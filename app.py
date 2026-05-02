@@ -771,7 +771,7 @@ def fetch_put_call_ratio():
         return None, f"SPY options proxy failed: {e}"
 
 
-def classify_put_calldef classify_put_call(value):
+def classify_put_call(value):
     """
     SPY Put/Call Proxy interpretation.
     Lower weight than official CBOE PCR because it is only SPY-nearest-expiry volume proxy.
