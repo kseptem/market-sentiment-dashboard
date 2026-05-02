@@ -100,6 +100,18 @@ html,body,.stApp{background:#f8fafc!important;color:#111827!important}.block-con
     color:#991b1b;
 }
 
+
+/* --- Pro v2 cards --- */
+.pro-summary{border-radius:16px;padding:12px 16px;margin:8px 0 14px;font-size:13px;line-height:1.5;border:1px solid #e2e8f0}
+.pro-summary.green{background:#ecfdf5;border-color:#a7f3d0;color:#065f46}
+.pro-summary.yellow{background:#fffbeb;border-color:#fde68a;color:#92400e}
+.pro-summary.red{background:#fef2f2;border-color:#fecaca;color:#991b1b}
+.pro-title{font-size:20px;font-weight:950;color:#111827;margin:16px 0 10px}
+.macro-card.heat-green{background:linear-gradient(135deg,#ecfdf5 0%,#fff 75%);border-color:#a7f3d0}
+.macro-card.heat-yellow{background:linear-gradient(135deg,#fffbeb 0%,#fff 75%);border-color:#fde68a}
+.macro-card.heat-red{background:linear-gradient(135deg,#fef2f2 0%,#fff 75%);border-color:#fecaca}
+@media(max-width:760px){.pro-title{font-size:17px;margin:10px 0 8px}}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -114,6 +126,7 @@ INDEX_MAP = {
     "Dow Jones (^DJI)": "^DJI",
 }
 MACRO_SYMBOLS = {"10Y Yield": "^TNX", "DXY": "DX-Y.NYB", "HYG": "HYG", "LQD": "LQD"}
+PRO_SYMBOLS = {"MOVE": "^MOVE", "VIX3M": "^VIX3M", "RSP": "RSP", "SPY": "SPY"}
 MACRO_DISPLAY_NAMES = {"10Y Yield": "10Y Yield · 美国10年期国债收益率", "DXY": "DXY · 美元指数", "HYG": "HYG · 高收益债信用风险", "LQD": "LQD · 投资级债/利率压力"}
 PERIOD_OPTIONS = ["实时盘中", "3d", "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
 INTERVAL_OPTIONS = ["1d", "60m", "30m", "15m", "5m", "1m"]
@@ -545,7 +558,7 @@ def market_signal_engine(vix_value, fg_value, corr, index_return, vix_return, ma
     elif fg_value <= 85: score -= 18; notes.append("Fear & Greed 75-85：亢奋区，减速买入或部分止盈。")
     else: score -= 28; notes.append("Fear & Greed > 85：泡沫区，回撤风险上升。")
 
-    for key in ["10Y Yield", "DXY", "HYG", "LQD"]:
+    for key in ["10Y Yield", "DXY", "HYG", "LQD", "MOVE", "VIX3M/VIX", "Real Yield", "RSP/SPY", "Trend", "Put/Call"]:
         item = macro_summary.get(key)
         if item:
             score += item.get("score", 0)
@@ -623,6 +636,133 @@ def build_macro_risk_summary(macro_summary):
 
 
 
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_fred_series(series_id: str, lookback_days: int = 900) -> pd.DataFrame:
+    try:
+        url = f"https://fred.stlouisfed.org/graph/fredgraph.csv?id={series_id}"
+        r = requests.get(url, timeout=12)
+        r.raise_for_status()
+        from io import StringIO
+        df = pd.read_csv(StringIO(r.text))
+        if df.empty or "observation_date" not in df.columns or series_id not in df.columns:
+            return pd.DataFrame()
+        df = df.rename(columns={"observation_date": "time", series_id: "Close"})
+        df["time"] = pd.to_datetime(df["time"], errors="coerce")
+        df["Close"] = pd.to_numeric(df["Close"].replace(".", np.nan), errors="coerce")
+        df = df.dropna(subset=["time", "Close"]).sort_values("time")
+        cutoff = pd.Timestamp.now() - pd.Timedelta(days=lookback_days)
+        df = df[df["time"] >= cutoff]
+        df["Open"] = df["High"] = df["Low"] = df["Close"]
+        df["Volume"] = 0
+        return df[["time", "Open", "High", "Low", "Close", "Volume"]].copy()
+    except Exception:
+        return pd.DataFrame()
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def fetch_put_call_ratio():
+    # Stable public Put/Call APIs are inconsistent. Keep as optional placeholder.
+    return None, "N/A · source not configured"
+
+
+def latest_close(df):
+    if df is None or df.empty:
+        return None
+    return safe_float(df["Close"].iloc[-1], None)
+
+
+def classify_move(value):
+    if value is None:
+        return "N/A", "债券波动率数据不可用", "#64748b", 0
+    if value > 150:
+        return "债市高压", "MOVE > 150，债市波动极高，风险资产承压", "#ef4444", -16
+    if value > 120:
+        return "债市紧张", "MOVE 120-150，系统性波动压力偏高", "#eab308", -8
+    if value > 100:
+        return "偏高", "MOVE 100-120，债市波动略高", "#eab308", -4
+    return "稳定", "债市波动处于相对稳定区", "#10b981", 5
+
+
+def classify_vix_term(vix3m, vix):
+    if vix3m is None or vix is None or vix <= 0:
+        return None, "N/A", "期限结构数据不可用", "#64748b", 0
+    ratio = vix3m / vix
+    if ratio < 0.95:
+        return ratio, "倒挂", "近端恐慌高于远端，风险临近", "#ef4444", -14
+    if ratio < 1.05:
+        return ratio, "偏紧", "期限结构接近平坦，市场压力上升", "#eab308", -7
+    return ratio, "健康", "远期波动高于近端，期限结构正常", "#10b981", 5
+
+
+def classify_rsp_spy(ratio_change):
+    if ratio_change is None:
+        return "N/A", "市场宽度数据不可用", "#64748b", 0
+    if ratio_change < -2:
+        return "宽度恶化", "RSP/SPY 明显下行，指数可能由少数权重股拉动", "#ef4444", -12
+    if ratio_change < -0.5:
+        return "宽度偏弱", "等权指数相对走弱，需警惕假牛", "#eab308", -6
+    if ratio_change > 1:
+        return "宽度改善", "等权指数相对走强，市场参与度改善", "#10b981", 8
+    return "宽度稳定", "市场宽度未明显恶化", "#10b981", 3
+
+
+def classify_trend(index_df_long):
+    if index_df_long is None or index_df_long.empty or len(index_df_long) < 210:
+        return None, "N/A", "趋势样本不足", "#64748b", 0
+    x = index_df_long.copy()
+    x["MA200"] = x["Close"].rolling(200).mean()
+    last = safe_float(x["Close"].iloc[-1], None)
+    ma200 = safe_float(x["MA200"].iloc[-1], None)
+    if last is None or ma200 is None or ma200 == 0:
+        return None, "N/A", "趋势数据不可用", "#64748b", 0
+    distance = (last / ma200 - 1) * 100
+    if distance < -5:
+        return distance, "熊市/弱趋势", "价格低于200MA较多，趋势偏弱", "#ef4444", -16
+    if distance < 0:
+        return distance, "趋势承压", "价格低于200MA，适合更保守", "#eab308", -8
+    if distance > 12:
+        return distance, "趋势过热", "价格显著高于200MA，需防追高", "#eab308", -4
+    return distance, "牛市趋势", "价格位于200MA上方，趋势健康", "#10b981", 10
+
+
+def classify_real_yield(value):
+    if value is None:
+        return "N/A", "真实利率数据不可用", "#64748b", 0
+    if value > 2.5:
+        return "高压", "真实利率偏高，估值压力明显", "#ef4444", -16
+    if value > 1.8:
+        return "偏高", "真实利率较高，压制估值扩张", "#eab308", -8
+    if value < 0.8:
+        return "宽松", "真实利率偏低，利好风险资产估值", "#10b981", 8
+    return "中性", "真实利率处于中性区", "#3b82f6", 2
+
+
+def classify_put_call(value):
+    if value is None:
+        return "N/A", "Put/Call 自动源未配置，不参与评分", "#64748b", 0
+    if value > 1.1:
+        return "恐慌", "Put/Call > 1.1，期权市场偏恐慌，反向机会增加", "#10b981", 8
+    if value < 0.65:
+        return "贪婪", "Put/Call < 0.65，追涨情绪偏强，顶部风险上升", "#eab308", -8
+    return "中性", "Put/Call 处于中性区", "#3b82f6", 2
+
+
+def build_pro_summary(pro_summary):
+    levels = {k: macro_heat_level(k, v) for k, v in pro_summary.items()}
+    red = [k for k, v in levels.items() if v == "red"]
+    yellow = [k for k, v in levels.items() if v == "yellow"]
+    if len(red) >= 2 or (len(red) >= 1 and len(yellow) >= 3):
+        level, title, msg = "red", "Pro Risk · 高风险复合信号", "趋势、流动性、波动或信用多个维度同时承压，建议显著降低追高动作。"
+    elif len(red) >= 1 or len(yellow) >= 3:
+        level, title, msg = "yellow", "Pro Risk · 风险升温", "部分专业指标开始走弱，建议定投降速、提高现金缓冲。"
+    else:
+        level, title, msg = "green", "Pro Risk · 结构健康", "趋势、流动性、信用与波动结构整体未出现明显系统性压力。"
+    detail = [f"{MACRO_DISPLAY_NAMES.get(k, k)}：{v.get('label')}" for k, v in pro_summary.items()]
+    return {"level": level, "title": title, "msg": msg, "detail": detail, "levels": levels}
+
+
+
 def render_meter_card(kind, value, label, strategy, color, pointer_pct, source=""):
     if kind == "vix":
         title, desc, labels, seg_colors, accent = "VIX · S&P 500", "波动率指数", ["<11", "11-14", "14-18", "18-25", "25-35", "35-50", ">50"], ["#d1fae5", "#10b981", "#86efac", "#fde68a", "#fdba74", "#fca5a5", "#f8b4c2"], "#10b981"
@@ -695,17 +835,28 @@ def heat_badge_text(level):
     return "健康"
 
 
+def macro_heat_level(name, item):
+    score = item.get("score", 0)
+    if score <= -10:
+        return "red"
+    if score < 0:
+        return "yellow"
+    return "green"
+
+
+def heat_badge_text(level):
+    return "高风险" if level == "red" else ("警惕" if level == "yellow" else "健康")
+
+
 def render_macro_card(title, value_text, label, note, color, change_text, heat_level="green"):
-    heat_class = f"heat-{heat_level}"
-    risk_text = heat_badge_text(heat_level)
     st.markdown(
         f"""
-<div class="macro-card {heat_class}">
+<div class="macro-card heat-{heat_level}">
   <div class="macro-title">{title}</div>
   <div class="macro-value">{value_text}</div>
   <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
     <div class="macro-label" style="color:{color};background:{color}18;border:1px solid {color}55;">{label}</div>
-    <div class="macro-label" style="color:{color};background:{color}10;border:1px solid {color}33;">{risk_text}</div>
+    <div class="macro-label" style="color:{color};background:{color}10;border:1px solid {color}33;">{heat_badge_text(heat_level)}</div>
   </div>
   <div class="macro-note">{note}</div>
   <div class="macro-note">窗口变化：{change_text}</div>
@@ -778,10 +929,14 @@ analytics_interval = "1d"
 index_df_display = fetch_yahoo(symbol, display_period, display_interval)
 vix_df_display = fetch_yahoo("^VIX", display_period, display_interval)
 macro_data_display = {name: fetch_yahoo(sym, display_period, display_interval) for name, sym in MACRO_SYMBOLS.items()}
+pro_data_display = {name: fetch_yahoo(sym, display_period, display_interval) for name, sym in PRO_SYMBOLS.items()}
 
 index_df = fetch_yahoo(symbol, analytics_period, analytics_interval)
 vix_df = fetch_yahoo("^VIX", analytics_period, analytics_interval)
 macro_data = {name: fetch_yahoo(sym, analytics_period, analytics_interval) for name, sym in MACRO_SYMBOLS.items()}
+pro_data = {name: fetch_yahoo(sym, analytics_period, analytics_interval) for name, sym in PRO_SYMBOLS.items()}
+index_df_long = fetch_yahoo(symbol, "1y", "1d")
+real_yield_df = fetch_fred_series("DFII10", lookback_days=900)
 
 vix_value = safe_float(vix_df_display["Close"].iloc[-1], 0) if not vix_df_display.empty else (safe_float(vix_df["Close"].iloc[-1], 0) if not vix_df.empty else 0)
 fg_value, fg_rating, fg_source, _fg_live = fetch_fear_greed_with_fallback(float(manual_fg))
@@ -824,14 +979,60 @@ for name, df_daily in macro_data.items():
 
 vix_label, vix_strategy, vix_color, vix_idx = vix_level(float(vix_value))
 fg_label, fg_strategy, fg_color, fg_idx = fear_greed_level(float(fg_value))
+# Professional indicator summary
+pro_summary = {}
+
+move_val = latest_close(pro_data_display.get("MOVE", pd.DataFrame())) or latest_close(pro_data.get("MOVE", pd.DataFrame()))
+move_label, move_note, move_color, move_score = classify_move(move_val)
+pro_summary["MOVE"] = {"value": move_val, "display": f"{move_val:.1f}" if move_val is not None else "N/A", "label": move_label, "note": move_note, "color": move_color, "score": move_score, "change": pct_change_text(pro_data_display.get("MOVE", pd.DataFrame()))}
+
+vix3m_val = latest_close(pro_data_display.get("VIX3M", pd.DataFrame())) or latest_close(pro_data.get("VIX3M", pd.DataFrame()))
+vix_term_ratio, term_label, term_note, term_color, term_score = classify_vix_term(vix3m_val, vix_value)
+pro_summary["VIX3M/VIX"] = {"value": vix_term_ratio, "display": f"{vix_term_ratio:.2f}" if vix_term_ratio is not None else "N/A", "label": term_label, "note": term_note, "color": term_color, "score": term_score, "change": None}
+
+rsp_df = pro_data_display.get("RSP", pd.DataFrame())
+spy_df = pro_data_display.get("SPY", pd.DataFrame())
+rsp_spy_val, rsp_spy_change = None, None
+try:
+    if rsp_df is not None and not rsp_df.empty and spy_df is not None and not spy_df.empty:
+        merged_ratio = pd.merge(
+            rsp_df[["time", "Close"]].rename(columns={"Close": "RSP"}),
+            spy_df[["time", "Close"]].rename(columns={"Close": "SPY"}),
+            on="time",
+            how="inner",
+        )
+        if len(merged_ratio) >= 2:
+            ratio = merged_ratio["RSP"] / merged_ratio["SPY"]
+            rsp_spy_val = ratio.iloc[-1]
+            rsp_spy_change = (ratio.iloc[-1] / ratio.iloc[0] - 1) * 100
+except Exception:
+    pass
+breadth_label, breadth_note, breadth_color, breadth_score = classify_rsp_spy(rsp_spy_change)
+pro_summary["RSP/SPY"] = {"value": rsp_spy_val, "display": f"{rsp_spy_val:.3f}" if rsp_spy_val is not None else "N/A", "label": breadth_label, "note": breadth_note, "color": breadth_color, "score": breadth_score, "change": rsp_spy_change}
+
+trend_distance, trend_label, trend_note, trend_color, trend_score = classify_trend(index_df_long)
+pro_summary["Trend"] = {"value": trend_distance, "display": f"{trend_distance:+.1f}% vs 200MA" if trend_distance is not None else "N/A", "label": trend_label, "note": trend_note, "color": trend_color, "score": trend_score, "change": None}
+
+real_yield_val = latest_close(real_yield_df)
+real_yield_label, real_yield_note, real_yield_color, real_yield_score = classify_real_yield(real_yield_val)
+pro_summary["Real Yield"] = {"value": real_yield_val, "display": f"{real_yield_val:.2f}%" if real_yield_val is not None else "N/A", "label": real_yield_label, "note": real_yield_note, "color": real_yield_color, "score": real_yield_score, "change": pct_change_text(real_yield_df)}
+
+put_call_val, put_call_source = fetch_put_call_ratio()
+pc_label, pc_note, pc_color, pc_score = classify_put_call(put_call_val)
+pro_summary["Put/Call"] = {"value": put_call_val, "display": f"{put_call_val:.2f}" if put_call_val is not None else "N/A", "label": pc_label, "note": pc_note, "color": pc_color, "score": pc_score, "change": None}
+
 divergence_info = detect_macro_divergences(index_return, vix_return, macro_summary, corr)
 macro_risk_summary = build_macro_risk_summary(macro_summary)
-score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr, index_return, vix_return, macro_summary, divergence_info)
+pro_risk_summary = build_pro_summary(pro_summary)
+
+extended_summary = dict(macro_summary)
+extended_summary.update({k: {"label": v.get("label"), "note": v.get("note"), "score": v.get("score", 0), "change": v.get("change")} for k, v in pro_summary.items()})
+score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr, index_return, vix_return, extended_summary, divergence_info)
 
 today = datetime.now().strftime("%Y · %m · %d / %a")
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
 st.markdown('<div class="pill">◆ VOO / SPY MACRO RISK DASHBOARD</div>', unsafe_allow_html=True)
-st.markdown('<div class="main-title">美股大盘/ETF投资观测系统</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">大盘 ETF 投资观测系统</div>', unsafe_allow_html=True)
 mode_text = "实时盘中 · 分钟级展示 / 日线计算" if is_live_mode else f"{period} · 日线计算"
 st.markdown(f'<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">Price · VIX · Fear & Greed · Rates · USD · Credit</b>　价格 / 波动 / 情绪 / 利率 / 美元 / 信用　<span class="source-chip">{mode_text}</span></div>', unsafe_allow_html=True)
 
@@ -858,7 +1059,7 @@ st.markdown(f"""
     <div class="title">◆ TODAY'S STRATEGY · 今日策略</div>
     <div class="main">{strategy}</div>
     <div class="compact-summary-note" style="margin-top:10px;">信号标签：{" · ".join(signal_tags)}</div>
-    <div class="compact-summary-note" style="margin-top:8px;"><b>{divergence_info.get("title")}</b></div><div class="compact-summary-note"><b>{macro_risk_summary.get("title")}</b></div>
+    <div class="compact-summary-note" style="margin-top:8px;"><b>{divergence_info.get("title")}</b></div><div class="compact-summary-note"><b>{macro_risk_summary.get("title")}</b></div><div class="compact-summary-note"><b>{pro_risk_summary.get("title")}</b></div>
   </div>
   <div class="signal-card">
     <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
@@ -908,8 +1109,36 @@ for i, name in enumerate(["10Y Yield", "DXY", "HYG", "LQD"]):
             item.get("note", "No data"),
             item.get("color", "#64748b"),
             f"{item.get('change'):+.2f}%" if item.get("change") is not None else "N/A",
-            macro_risk_summary.get("levels", {}).get(name, "green"),
+            macro_risk_summary.get("levels", {}).get(name, macro_heat_level(name, item)),
         )
+
+
+st.markdown(
+    f"""
+<div class="pro-summary {pro_risk_summary.get("level")}">
+  <b>Pro Composite Summary · {pro_risk_summary.get("title")}</b><br>
+  {pro_risk_summary.get("msg")}<br>
+  <span style="font-size:12px;">{" · ".join(pro_risk_summary.get("detail", []))}</span>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
+st.markdown('<div class="pro-title">Professional Signals · 专业增强指标</div>', unsafe_allow_html=True)
+pro_cols = st.columns(3, gap="medium")
+for idx, name in enumerate(["Real Yield", "MOVE", "VIX3M/VIX", "RSP/SPY", "Trend", "Put/Call"]):
+    item = pro_summary.get(name, {})
+    with pro_cols[idx % 3]:
+        render_macro_card(
+            MACRO_DISPLAY_NAMES.get(name, name),
+            item.get("display", "N/A"),
+            item.get("label", "N/A"),
+            item.get("note", "No data"),
+            item.get("color", "#64748b"),
+            f"{item.get('change'):+.2f}%" if item.get("change") is not None else "N/A",
+            pro_risk_summary.get("levels", {}).get(name, macro_heat_level(name, item)),
+        )
+
 
 st.markdown("### 策略区间")
 pb1, pb2 = st.columns(2, gap="medium")
@@ -929,6 +1158,16 @@ st.plotly_chart(build_price_chart(index_df_display if not index_df_display.empty
 
 st.markdown("### Macro Trends · 宏观趋势")
 st.plotly_chart(build_macro_trend_chart(macro_data), use_container_width=True)
+
+st.markdown("### Pro Trends · 专业指标趋势")
+pro_trend_data = {
+    "MOVE": pro_data.get("MOVE", pd.DataFrame()),
+    "VIX3M": pro_data.get("VIX3M", pd.DataFrame()),
+    "RSP": pro_data.get("RSP", pd.DataFrame()),
+    "SPY": pro_data.get("SPY", pd.DataFrame()),
+    "Real Yield": real_yield_df,
+}
+st.plotly_chart(build_macro_trend_chart(pro_trend_data), use_container_width=True)
 st.caption("宏观趋势图将每个指标窗口起点标准化为 100，方便看方向，不代表绝对数值大小。")
 
 st.markdown("### 相关性分析")
@@ -958,7 +1197,7 @@ with st.expander("查看原始相关性数据 · 字段说明"):
 <b>DXY / 美元指数</b>：美元流动性指标，走强通常压制风险资产。<br>
 <b>HYG / 高收益债ETF</b>：信用风险 proxy，走弱代表信用端压力。<br>
 <b>LQD / 投资级债ETF</b>：利率/高等级信用压力 proxy。<br>
-<b>RollingCorr</b>：滚动相关性，判断价格与风险因子是否出现背离。
+<b>MOVE</b>：债券市场波动率，常领先股市风险。<br><b>VIX3M/VIX</b>：波动率期限结构，倒挂代表近端风险高。<br><b>Real Yield</b>：真实利率，越高越压制估值。<br><b>RSP/SPY</b>：等权/市值权重比值，衡量市场宽度。<br><b>Trend</b>：价格相对200日均线的趋势过滤器。<br><b>Put/Call</b>：期权仓位情绪；当前为预留项，未配置稳定数据源时不参与评分。<br><b>RollingCorr</b>：滚动相关性，判断价格与风险因子是否出现背离。
 </div>
 """, unsafe_allow_html=True)
     if corr_df.empty:
