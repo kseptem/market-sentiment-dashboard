@@ -115,7 +115,7 @@ INDEX_MAP = {
 }
 MACRO_SYMBOLS = {"10Y Yield": "^TNX", "DXY": "DX-Y.NYB", "HYG": "HYG", "LQD": "LQD"}
 MACRO_DISPLAY_NAMES = {"10Y Yield": "10Y Yield · 美国10年期国债收益率", "DXY": "DXY · 美元指数", "HYG": "HYG · 高收益债信用风险", "LQD": "LQD · 投资级债/利率压力"}
-PERIOD_OPTIONS = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
+PERIOD_OPTIONS = ["3d", "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
 INTERVAL_OPTIONS = ["1d", "60m", "30m", "15m", "5m", "1m"]
 FG_HISTORY_PATH = Path("fg_history.csv")
 
@@ -151,20 +151,40 @@ def safe_float(x, default=None):
 @st.cache_data(ttl=45, show_spinner=False)
 def fetch_yahoo(symbol: str, period: str, interval: str) -> pd.DataFrame:
     try:
-        df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=False, threads=False)
+        query_period = "5d" if period == "3d" else period
+
+        df = yf.download(
+            symbol,
+            period=query_period,
+            interval=interval,
+            progress=False,
+            auto_adjust=False,
+            threads=False,
+        )
         if df is None or df.empty:
             return pd.DataFrame()
+
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = [c[0] if isinstance(c, tuple) else c for c in df.columns]
+
         df = df.reset_index()
         time_col = "Datetime" if "Datetime" in df.columns else "Date"
         df = df.rename(columns={time_col: "time"})
+
         for col in ["Open", "High", "Low", "Close", "Volume"]:
             if col not in df.columns:
                 df[col] = 0 if col == "Volume" else np.nan
+
         df["time"] = pd.to_datetime(df["time"], errors="coerce")
         df["Close"] = pd.to_numeric(df["Close"], errors="coerce")
-        return df.dropna(subset=["time", "Close"])[["time", "Open", "High", "Low", "Close", "Volume"]].copy()
+        df = df.dropna(subset=["time", "Close"])
+
+        if period == "3d" and not df.empty:
+            cutoff = df["time"].max() - pd.Timedelta(days=3)
+            df = df[df["time"] >= cutoff]
+
+        return df[["time", "Open", "High", "Low", "Close", "Volume"]].copy()
+
     except Exception:
         return pd.DataFrame()
 
@@ -273,6 +293,22 @@ def build_fg_history_for_app(current_value: float, current_label: str, current_s
     hist["date"] = pd.to_datetime(hist["date"], errors="coerce").dt.date.astype(str)
     hist["FearGreed"] = pd.to_numeric(hist["FearGreed"], errors="coerce")
     return hist.dropna(subset=["date", "FearGreed"]).drop_duplicates(subset=["date"], keep="last").sort_values("date")
+
+
+
+def save_fg_history_file(hist: pd.DataFrame) -> bool:
+    try:
+        if hist is None or hist.empty:
+            return False
+        out = hist.copy()
+        out["date"] = pd.to_datetime(out["date"], errors="coerce").dt.date.astype(str)
+        out["FearGreed"] = pd.to_numeric(out["FearGreed"], errors="coerce")
+        out = out.dropna(subset=["date", "FearGreed"])
+        out = out.drop_duplicates(subset=["date"], keep="last").sort_values("date")
+        out.to_csv(FG_HISTORY_PATH, index=False)
+        return True
+    except Exception:
+        return False
 
 
 def fg_history_for_correlation(hist: pd.DataFrame) -> pd.DataFrame:
@@ -721,7 +757,8 @@ with st.sidebar:
     rolling_window = st.slider("Rolling correlation window", 5, 120, 30, 5)
     refresh = st.slider("Auto refresh seconds", 0, 600, 120, 15)
     manual_fg = st.number_input("Manual Fear & Greed fallback", 0, 100, 50, 1)
-    st.caption("FG历史来自 repo 中的 fg_history.csv；本地 collector 每晚更新并 push。")
+    collect_fg_now = st.button("实时采集 Fear & Greed 当前值", use_container_width=True)
+    st.caption("FG历史来自 repo 中的 fg_history.csv；本地 collector 每晚更新并 push。按钮可立即采集当前值并写入本地 CSV。")
 
 if refresh:
     st_autorefresh(interval=refresh * 1000, key="market-refresh")
@@ -734,6 +771,14 @@ macro_data = {name: fetch_yahoo(sym, period, interval) for name, sym in MACRO_SY
 vix_value = safe_float(vix_df["Close"].iloc[-1], 0) if not vix_df.empty else 0
 fg_value, fg_rating, fg_source, _fg_live = fetch_fear_greed_with_fallback(float(manual_fg))
 fg_history_table = build_fg_history_for_app(float(fg_value), str(fg_rating), str(fg_source))
+
+if collect_fg_now:
+    saved_ok = save_fg_history_file(fg_history_table)
+    if saved_ok:
+        st.sidebar.success(f"已采集并写入 fg_history.csv：{fg_value:.0f} · {fg_rating}")
+    else:
+        st.sidebar.error("采集成功，但写入 fg_history.csv 失败")
+
 fg_hist = fg_history_for_correlation(fg_history_table)
 
 index_return, vix_return = pct_change_text(index_df), pct_change_text(vix_df)
@@ -861,7 +906,7 @@ m1.metric(index_label, last_index, f"{period} change: {idx_ret}")
 m2.metric("VIX", f"{vix_value:.2f}", f"{period} change: {vix_ret}")
 m3.metric("CNN Fear & Greed", f"{fg_value:.0f}", fg_rating)
 m4.metric("Auto refresh", f"{refresh}s" if refresh else "Off")
-st.caption(f"顶部百分比为当前选择窗口（{period}）内累计变化，不是单日涨跌。")
+st.caption(f"顶部百分比为当前选择窗口（{period}）内累计变化，不是单日涨跌。3d 为用 5d 数据裁剪最近 3 天。")
 st.plotly_chart(build_price_chart(index_df, vix_df, index_label), use_container_width=True)
 
 st.markdown("### Macro Trends · 宏观趋势")
