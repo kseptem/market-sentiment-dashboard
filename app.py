@@ -1325,7 +1325,12 @@ index_return = pct_change_text(index_df)
 vix_return = pct_change_text(vix_df)
 score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr_vix, index_return, vix_return)
 
-# Row 1: three compact core cards
+last_index = f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A"
+idx_ret = f"{index_return:+.2f}%" if index_return is not None else "N/A"
+vix_ret = f"{vix_return:+.2f}%" if vix_return is not None else "N/A"
+note_html = "<br>".join([f"• {x}" for x in signal_notes[:4]])
+
+# Row 1: VIX / Fear & Greed / Signal annotation
 card1, card2, card3 = st.columns([1.05, 1.05, 0.95], gap="medium")
 
 with card1:
@@ -1351,41 +1356,18 @@ with card2:
     )
 
 with card3:
-    last_index = f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A"
-    idx_ret = f"{index_return:+.2f}%" if index_return is not None else "N/A"
-    vix_ret = f"{vix_return:+.2f}%" if vix_return is not None else "N/A"
-
     st.markdown(
         f"""
-<div class="signal-card" style="min-height:250px;">
-  <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
-  <div style="display:flex;align-items:end;gap:12px;margin-bottom:12px;">
-    <div class="signal-score">{score}</div>
-    <div>
-      <div class="signal-label">{signal}</div>
-      <div class="compact-summary-note">越高越适合增量买入</div>
-    </div>
-  </div>
-  <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;">
-    <div>
-      <div class="compact-summary-note">{index_label}</div>
-      <div class="compact-summary-value" style="font-size:20px;">{last_index}</div>
-      <div class="compact-summary-note">{idx_ret}</div>
-    </div>
-    <div>
-      <div class="compact-summary-note">VIX / F&G</div>
-      <div class="compact-summary-value" style="font-size:20px;">{vix_value:.1f} / {fg_value:.0f}</div>
-      <div class="compact-summary-note">VIX {vix_ret} · {fg_rating}</div>
-    </div>
-  </div>
-  <div style="margin-top:12px;" class="compact-summary-note">建议权益仓位：<b>{position_suggestion}</b></div>
+<div class="note-panel {annotation_class(signal_level)}" style="min-height:250px;">
+  <div class="compact-summary-title">SIGNAL NOTES · 信号注释</div>
+  <b>{signal}</b><br>
+  {note_html}
 </div>
 """,
         unsafe_allow_html=True,
     )
 
-# Row 2: strategy and explanations full width
-note_html = "<br>".join([f"• {x}" for x in signal_notes[:4]])
+# Row 2: strategy / market signal / position sizing
 st.markdown(
     f"""
 <div class="strategy-grid">
@@ -1394,9 +1376,30 @@ st.markdown(
     <div class="main">{strategy}</div>
     <div class="compact-summary-note" style="margin-top:10px;">信号标签：{" · ".join(signal_tags)}</div>
   </div>
-  <div class="note-panel {annotation_class(signal_level)}">
-    <b>信号注释：</b><br>{note_html}
+
+  <div class="signal-card" style="height:100%;">
+    <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
+    <div style="display:flex;align-items:end;gap:12px;margin-bottom:12px;">
+      <div class="signal-score">{score}</div>
+      <div>
+        <div class="signal-label">{signal}</div>
+        <div class="compact-summary-note">0-100 越高越适合增量买入</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px;">
+      <div>
+        <div class="compact-summary-note">{index_label}</div>
+        <div class="compact-summary-value" style="font-size:20px;">{last_index}</div>
+        <div class="compact-summary-note">{idx_ret}</div>
+      </div>
+      <div>
+        <div class="compact-summary-note">VIX / F&G</div>
+        <div class="compact-summary-value" style="font-size:20px;">{vix_value:.1f} / {fg_value:.0f}</div>
+        <div class="compact-summary-note">VIX {vix_ret} · {fg_rating}</div>
+      </div>
+    </div>
   </div>
+
   <div class="position-panel">
     <div class="k">POSITION SIZING · 仓位建议</div>
     <div class="v">{position_suggestion}</div>
@@ -1408,7 +1411,7 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-# Row 3: playbooks immediately below, no blank area
+# Row 3: playbooks
 st.markdown("### 策略区间")
 pb1, pb2 = st.columns(2, gap="medium")
 with pb1:
