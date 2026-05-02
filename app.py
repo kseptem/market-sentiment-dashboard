@@ -405,6 +405,76 @@ div[data-testid="stMetricValue"] {
     margin-top:6px;
 }
 
+
+.signal-card {
+    background: linear-gradient(135deg, #ecfdf5 0%, #ffffff 70%);
+    border: 1px solid #a7f3d0;
+    border-radius: 16px;
+    padding: 14px 16px;
+    margin-bottom: 12px;
+}
+.signal-score {
+    font-size: 38px;
+    font-weight: 950;
+    color: #059669;
+    line-height: 1;
+}
+.signal-label {
+    font-size: 16px;
+    font-weight: 950;
+    color: #111827;
+}
+.annotation-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-left: 5px solid #10b981;
+    border-radius: 14px;
+    padding: 12px 14px;
+    margin: 10px 0 14px 0;
+    color: #334155;
+    font-size: 14px;
+    line-height: 1.55;
+}
+.annotation-box.warning {
+    border-left-color: #eab308;
+    background: #fffbeb;
+}
+.annotation-box.danger {
+    border-left-color: #ef4444;
+    background: #fef2f2;
+}
+.data-dict {
+    background:#ffffff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    padding:12px 14px;
+    margin:8px 0;
+    font-size:13px;
+    color:#475569;
+}
+.data-dict b {
+    color:#111827;
+}
+@media (max-width: 900px) {
+    .main-title {
+        font-size: 28px;
+    }
+    .big-number {
+        font-size: 42px;
+    }
+    .metric-card {
+        padding: 13px 14px;
+    }
+    .strategy-main {
+        font-size: 22px;
+    }
+    .badge {
+        min-width: 88px;
+        font-size: 12px;
+        padding: 6px 10px;
+    }
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -940,6 +1010,100 @@ def pct_change_text(df: pd.DataFrame):
     return (last / first - 1) * 100
 
 
+
+def market_signal_engine(vix_value: float, fg_value: float, corr_vix: Optional[float] = None):
+    """
+    Returns score, signal, risk level, and explanations.
+    Score range: 0-100. Higher means better risk/reward for incremental buying.
+    """
+    score = 55
+    notes = []
+
+    # VIX contribution
+    if vix_value < 12:
+        score -= 10
+        notes.append("VIX 低于 12，市场过于平静，容易出现追高风险。")
+    elif vix_value < 20:
+        score += 5
+        notes.append("VIX 处于 12-20 正常波动区间，市场风险可控。")
+    elif vix_value < 30:
+        score += 10
+        notes.append("VIX 进入 20-30，恐惧上升但未失控，适合分批布局。")
+    elif vix_value < 50:
+        score += 20
+        notes.append("VIX 进入 30-50，市场恐慌显著，长期资金可关注逢低机会。")
+    else:
+        score += 25
+        notes.append("VIX 超过 50，属于极端恐慌区，历史上常出现高风险高回报窗口。")
+
+    # Fear & Greed contribution
+    if fg_value <= 24:
+        score += 22
+        notes.append("Fear & Greed 处于极度恐惧，情绪反转价值较高。")
+    elif fg_value <= 44:
+        score += 12
+        notes.append("Fear & Greed 处于恐惧区，适合分批买入。")
+    elif fg_value <= 55:
+        score += 3
+        notes.append("Fear & Greed 中性，适合按计划执行。")
+    elif fg_value <= 75:
+        score -= 8
+        notes.append("Fear & Greed 处于贪婪区，继续上涨可能但不宜追高。")
+    else:
+        score -= 18
+        notes.append("Fear & Greed 极度贪婪，短期回撤风险上升。")
+
+    # Correlation contribution
+    if corr_vix is not None and not np.isnan(corr_vix):
+        if corr_vix > -0.3:
+            score -= 15
+            notes.append("指数与 VIX 的负相关明显减弱，可能出现上涨但风险同步上升的背离。")
+        elif corr_vix > -0.6:
+            score -= 6
+            notes.append("指数与 VIX 相关性偏弱，需要警惕波动结构变化。")
+        elif corr_vix < -0.95:
+            score -= 3
+            notes.append("指数与 VIX 负相关极强，市场共识较拥挤，短期可能出现反向波动。")
+        else:
+            score += 4
+            notes.append("指数与 VIX 保持正常强负相关，市场结构较健康。")
+    else:
+        notes.append("相关性样本不足，当前信号主要基于 VIX 与 Fear & Greed。")
+
+    score = int(max(0, min(100, score)))
+
+    if score >= 78:
+        signal = "强机会区"
+        level = "opportunity"
+        action = "加大定投 · 分批买入 · 保留现金"
+    elif score >= 62:
+        signal = "偏进攻"
+        level = "constructive"
+        action = "小幅加仓 · 继续定投 · 等确认"
+    elif score >= 45:
+        signal = "中性健康"
+        level = "normal"
+        action = "常规定投 · 保持节奏 · 不追高"
+    elif score >= 30:
+        signal = "偏防守"
+        level = "caution"
+        action = "减半定投 · 控制仓位 · 等回调"
+    else:
+        signal = "高风险"
+        level = "risk"
+        action = "暂停追高 · 部分止盈 · 等风险释放"
+
+    return score, signal, level, action, notes
+
+
+def annotation_class(level: str):
+    if level in ("risk",):
+        return "danger"
+    if level in ("caution",):
+        return "warning"
+    return ""
+
+
 def combined_strategy(vix_value: float, fg_value: float):
     vix_label, vix_strategy, _, vix_idx = vix_level(vix_value)
     fg_label, fg_strategy, _, fg_idx = fear_greed_level(fg_value)
@@ -1003,10 +1167,13 @@ st.markdown(
 )
 
 
+# Preliminary correlation for signal engine
+corr_df, corr_vix, corr_fg = compute_correlations(index_df, vix_df, fg_hist, rolling_window)
+
 # -----------------------------
 # Executive dashboard
 # -----------------------------
-strategy = combined_strategy(float(vix_value), float(fg_value))
+score, signal, signal_level, strategy, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr_vix)
 
 top_left, top_right = st.columns([2.2, 1], gap="large")
 
@@ -1036,6 +1203,16 @@ with top_left:
 with top_right:
     st.markdown(
         f"""
+<div class="signal-card">
+  <div class="compact-summary-title">MARKET SIGNAL · 市场信号</div>
+  <div style="display:flex;align-items:end;gap:12px;">
+    <div class="signal-score">{score}</div>
+    <div>
+      <div class="signal-label">{signal}</div>
+      <div class="compact-summary-note">0-100 越高代表越适合增量买入</div>
+    </div>
+  </div>
+</div>
 <div class="strategy-box">
   <div class="strategy-title">◆ TODAY'S STRATEGY · 今日策略</div>
   <div class="strategy-main">{strategy}</div>
@@ -1072,6 +1249,16 @@ with top_right:
         unsafe_allow_html=True,
     )
 
+    note_html = "<br>".join([f"• {x}" for x in signal_notes[:4]])
+    st.markdown(
+        f"""
+<div class="annotation-box {annotation_class(signal_level)}">
+  <b>信号注释：</b><br>{note_html}
+</div>
+""",
+        unsafe_allow_html=True,
+    )
+
 st.markdown("### 策略区间")
 pb1, pb2 = st.columns(2, gap="medium")
 with pb1:
@@ -1094,8 +1281,6 @@ c4.metric("Auto refresh", f"{refresh}s" if refresh else "Off")
 
 st.plotly_chart(build_price_chart(index_df, vix_df, index_label), use_container_width=True)
 
-corr_df, corr_vix, corr_fg = compute_correlations(index_df, vix_df, fg_hist, rolling_window)
-
 st.markdown("### 相关性分析")
 m1, m2 = st.columns(2)
 m1.metric(
@@ -1109,14 +1294,49 @@ m2.metric(
     help="使用同日收益率与 Fear & Greed 日变化计算。CNN 历史数据不可用时可能无法计算。",
 )
 
+corr_comment = "正常情况下，指数和 VIX 应该强负相关。若相关性从 -0.8 附近快速升向 0，说明指数上涨时风险也在上升，属于背离信号。"
+if corr_vix is not None and not np.isnan(corr_vix):
+    if corr_vix > -0.3:
+        corr_comment = "⚠️ 当前指数与 VIX 负相关明显减弱，说明市场价格和风险指标出现背离，建议降低追高动作。"
+    elif corr_vix < -0.95:
+        corr_comment = "⚠️ 当前指数与 VIX 负相关极强，说明交易非常一致，短期可能出现反向波动。"
+    elif corr_vix < -0.6:
+        corr_comment = "✅ 当前指数与 VIX 保持强负相关，属于较健康的市场结构。"
+
+st.markdown(
+    f"""
+<div class="annotation-box">
+  <b>相关性怎么用：</b>{corr_comment}
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
 if corr_df is not None and not corr_df.empty:
     st.plotly_chart(build_corr_chart(corr_df), use_container_width=True)
 
-with st.expander("查看原始相关性数据"):
+with st.expander("查看原始相关性数据 · 字段说明"):
+    st.markdown(
+        """
+<div class="data-dict">
+<b>Index</b>：指数收盘价。<br>
+<b>VIX</b>：波动率指数，越高代表市场恐慌越强。<br>
+<b>IndexRet</b>：指数日收益率。<br>
+<b>VIXChg</b>：VIX 日变化率。<br>
+<b>RollingCorr_Index_VIX</b>：指数收益率与 VIX 变化率的滚动相关性，通常应为负值。<br>
+<b>FearGreed</b>：CNN 恐惧与贪婪指数；如果使用 Finhacker fallback，只有最新值，历史列可能为空。<br>
+<b>FGChg</b>：Fear & Greed 的日变化。历史数据不足时可能为空。
+</div>
+""",
+        unsafe_allow_html=True,
+    )
     if corr_df is None or corr_df.empty:
         st.write("No correlation data available.")
     else:
-        st.dataframe(corr_df.tail(120), use_container_width=True)
+        display_df = corr_df.tail(120).copy()
+        numeric_cols = display_df.select_dtypes(include=["float", "float64", "float32"]).columns
+        display_df[numeric_cols] = display_df[numeric_cols].round(4)
+        st.dataframe(display_df, use_container_width=True)
 
 
 # -----------------------------
