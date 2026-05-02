@@ -112,6 +112,59 @@ html,body,.stApp{background:#f8fafc!important;color:#111827!important}.block-con
 .macro-card.heat-red{background:linear-gradient(135deg,#fef2f2 0%,#fff 75%);border-color:#fecaca}
 @media(max-width:760px){.pro-title{font-size:17px;margin:10px 0 8px}}
 
+
+/* --- Combined decision summary --- */
+.decision-summary {
+    border-radius:18px;
+    padding:16px 18px;
+    margin:10px 0 16px 0;
+    border:1px solid #d7dde8;
+    box-shadow:0 2px 12px rgba(17,24,39,.035);
+    font-size:13px;
+    line-height:1.55;
+}
+.decision-summary.green {
+    background:linear-gradient(135deg,#ecfdf5 0%,#ffffff 78%);
+    border-color:#a7f3d0;
+    color:#065f46;
+}
+.decision-summary.yellow {
+    background:linear-gradient(135deg,#fffbeb 0%,#ffffff 78%);
+    border-color:#fde68a;
+    color:#92400e;
+}
+.decision-summary.red {
+    background:linear-gradient(135deg,#fef2f2 0%,#ffffff 78%);
+    border-color:#fecaca;
+    color:#991b1b;
+}
+.decision-grid {
+    display:grid;
+    grid-template-columns:1fr 1fr 1.1fr;
+    gap:14px;
+    align-items:start;
+}
+.decision-title {
+    font-size:16px;
+    font-weight:950;
+    margin-bottom:6px;
+}
+.decision-k {
+    font-size:12px;
+    font-weight:950;
+    opacity:.8;
+}
+.decision-v {
+    font-size:20px;
+    font-weight:950;
+    margin-top:2px;
+}
+@media(max-width:760px){
+    .decision-grid{grid-template-columns:1fr;gap:8px}
+    .decision-v{font-size:17px}
+    .decision-summary{padding:12px 14px}
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -127,7 +180,18 @@ INDEX_MAP = {
 }
 MACRO_SYMBOLS = {"10Y Yield": "^TNX", "DXY": "DX-Y.NYB", "HYG": "HYG", "LQD": "LQD"}
 PRO_SYMBOLS = {"MOVE": "^MOVE", "VIX3M": "^VIX3M", "RSP": "RSP", "SPY": "SPY"}
-MACRO_DISPLAY_NAMES = {"10Y Yield": "10Y Yield · 美国10年期国债收益率", "DXY": "DXY · 美元指数", "HYG": "HYG · 高收益债信用风险", "LQD": "LQD · 投资级债/利率压力"}
+MACRO_DISPLAY_NAMES = {
+    "10Y Yield": "10Y Yield · 美国10年期国债收益率",
+    "DXY": "DXY · 美元指数",
+    "HYG": "HYG · 高收益债信用风险",
+    "LQD": "LQD · 投资级债/利率压力",
+    "MOVE": "MOVE · 债券波动率",
+    "VIX3M/VIX": "VIX3M/VIX · 波动率期限结构",
+    "Real Yield": "Real Yield · 10年期真实利率",
+    "RSP/SPY": "RSP/SPY · 市场宽度Proxy",
+    "Trend": "Trend · 200日均线趋势",
+    "Put/Call": "Put/Call Proxy · SPY期权看跌/看涨成交量比",
+}
 PERIOD_OPTIONS = ["实时盘中", "3d", "1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
 INTERVAL_OPTIONS = ["1d", "60m", "30m", "15m", "5m", "1m"]
 FG_HISTORY_PATH = Path("fg_history.csv")
@@ -664,112 +728,50 @@ def fetch_fred_series(series_id: str, lookback_days: int = 900) -> pd.DataFrame:
 def fetch_put_call_ratio():
     """
     SPY options Put/Call proxy using yfinance option chain.
+
     This is NOT official CBOE total put/call ratio.
     It estimates positioning by:
         sum(SPY put option volume) / sum(SPY call option volume)
-    using the nearest listed expiry.
+
+    To avoid N/A caused by a quiet nearest expiry, scan the first several expiries
+    and use the first expiry with meaningful non-zero volume.
     """
     try:
         spy = yf.Ticker("SPY")
-        expiries = spy.options
+        expiries = list(spy.options or [])
         if not expiries:
-            return None, "No SPY option expiries"
+            return None, "No SPY option expiries from yfinance"
 
-        expiry = expiries[0]
-        chain = spy.option_chain(expiry)
+        tried = []
+        for expiry in expiries[:8]:
+            try:
+                chain = spy.option_chain(expiry)
+                puts = chain.puts
+                calls = chain.calls
+                if puts is None or calls is None or puts.empty or calls.empty:
+                    tried.append(f"{expiry}: empty")
+                    continue
 
-        puts = chain.puts
-        calls = chain.calls
+                put_vol = pd.to_numeric(puts.get("volume"), errors="coerce").fillna(0).sum()
+                call_vol = pd.to_numeric(calls.get("volume"), errors="coerce").fillna(0).sum()
 
-        if puts is None or calls is None or puts.empty or calls.empty:
-            return None, f"No option chain data for {expiry}"
+                tried.append(f"{expiry}: put={int(put_vol)}, call={int(call_vol)}")
 
-        put_vol = pd.to_numeric(puts.get("volume"), errors="coerce").fillna(0).sum()
-        call_vol = pd.to_numeric(calls.get("volume"), errors="coerce").fillna(0).sum()
+                if put_vol > 0 and call_vol > 0:
+                    pcr = float(put_vol / call_vol)
+                    return pcr, f"SPY options proxy · expiry {expiry} · put {int(put_vol):,} / call {int(call_vol):,}"
 
-        if call_vol <= 0:
-            return None, f"Call volume is zero for {expiry}"
+            except Exception as inner_e:
+                tried.append(f"{expiry}: {inner_e}")
+                continue
 
-        pcr = float(put_vol / call_vol)
-        return pcr, f"SPY options proxy · expiry {expiry}"
+        return None, "No non-zero SPY option volume found · " + " | ".join(tried[:3])
 
     except Exception as e:
         return None, f"SPY options proxy failed: {e}"
 
 
-def latest_close(df):
-    if df is None or df.empty:
-        return None
-    return safe_float(df["Close"].iloc[-1], None)
-
-
-def classify_move(value):
-    if value is None:
-        return "N/A", "债券波动率数据不可用", "#64748b", 0
-    if value > 150:
-        return "债市高压", "MOVE > 150，债市波动极高，风险资产承压", "#ef4444", -16
-    if value > 120:
-        return "债市紧张", "MOVE 120-150，系统性波动压力偏高", "#eab308", -8
-    if value > 100:
-        return "偏高", "MOVE 100-120，债市波动略高", "#eab308", -4
-    return "稳定", "债市波动处于相对稳定区", "#10b981", 5
-
-
-def classify_vix_term(vix3m, vix):
-    if vix3m is None or vix is None or vix <= 0:
-        return None, "N/A", "期限结构数据不可用", "#64748b", 0
-    ratio = vix3m / vix
-    if ratio < 0.95:
-        return ratio, "倒挂", "近端恐慌高于远端，风险临近", "#ef4444", -14
-    if ratio < 1.05:
-        return ratio, "偏紧", "期限结构接近平坦，市场压力上升", "#eab308", -7
-    return ratio, "健康", "远期波动高于近端，期限结构正常", "#10b981", 5
-
-
-def classify_rsp_spy(ratio_change):
-    if ratio_change is None:
-        return "N/A", "市场宽度数据不可用", "#64748b", 0
-    if ratio_change < -2:
-        return "宽度恶化", "RSP/SPY 明显下行，指数可能由少数权重股拉动", "#ef4444", -12
-    if ratio_change < -0.5:
-        return "宽度偏弱", "等权指数相对走弱，需警惕假牛", "#eab308", -6
-    if ratio_change > 1:
-        return "宽度改善", "等权指数相对走强，市场参与度改善", "#10b981", 8
-    return "宽度稳定", "市场宽度未明显恶化", "#10b981", 3
-
-
-def classify_trend(index_df_long):
-    if index_df_long is None or index_df_long.empty or len(index_df_long) < 210:
-        return None, "N/A", "趋势样本不足", "#64748b", 0
-    x = index_df_long.copy()
-    x["MA200"] = x["Close"].rolling(200).mean()
-    last = safe_float(x["Close"].iloc[-1], None)
-    ma200 = safe_float(x["MA200"].iloc[-1], None)
-    if last is None or ma200 is None or ma200 == 0:
-        return None, "N/A", "趋势数据不可用", "#64748b", 0
-    distance = (last / ma200 - 1) * 100
-    if distance < -5:
-        return distance, "熊市/弱趋势", "价格低于200MA较多，趋势偏弱", "#ef4444", -16
-    if distance < 0:
-        return distance, "趋势承压", "价格低于200MA，适合更保守", "#eab308", -8
-    if distance > 12:
-        return distance, "趋势过热", "价格显著高于200MA，需防追高", "#eab308", -4
-    return distance, "牛市趋势", "价格位于200MA上方，趋势健康", "#10b981", 10
-
-
-def classify_real_yield(value):
-    if value is None:
-        return "N/A", "真实利率数据不可用", "#64748b", 0
-    if value > 2.5:
-        return "高压", "真实利率偏高，估值压力明显", "#ef4444", -16
-    if value > 1.8:
-        return "偏高", "真实利率较高，压制估值扩张", "#eab308", -8
-    if value < 0.8:
-        return "宽松", "真实利率偏低，利好风险资产估值", "#10b981", 8
-    return "中性", "真实利率处于中性区", "#3b82f6", 2
-
-
-def classify_put_call(value):
+def classify_put_calldef classify_put_call(value):
     """
     SPY Put/Call Proxy interpretation.
     Lower weight than official CBOE PCR because it is only SPY-nearest-expiry volume proxy.
@@ -785,6 +787,26 @@ def classify_put_call(value):
     if value < 0.75:
         return "偏贪婪", "SPY Put/Call Proxy 0.55-0.75，风险偏好偏强", "#eab308", -3
     return "中性", "SPY Put/Call Proxy 处于中性区", "#3b82f6", 1
+
+
+
+
+def combined_decision_level(macro_risk_summary, pro_risk_summary, semi_quant_regime, divergence_info):
+    levels = [
+        macro_risk_summary.get("level", "green"),
+        pro_risk_summary.get("level", "green"),
+        semi_quant_regime.get("color", "green"),
+    ]
+    if divergence_info.get("level") == "high":
+        levels.append("red")
+    elif divergence_info.get("level") == "medium":
+        levels.append("yellow")
+
+    if "red" in levels:
+        return "red"
+    if levels.count("yellow") >= 1:
+        return "yellow"
+    return "green"
 
 
 
@@ -1145,6 +1167,7 @@ extended_summary = dict(macro_summary)
 extended_summary.update({k: {"label": v.get("label"), "note": v.get("note"), "score": v.get("score", 0), "change": v.get("change")} for k, v in pro_summary.items()})
 score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_notes = market_signal_engine(float(vix_value), float(fg_value), corr, index_return, vix_return, extended_summary, divergence_info)
 semi_quant_regime = build_semi_quant_regime(score, macro_risk_summary, pro_risk_summary, divergence_info, pro_summary)
+combined_level = combined_decision_level(macro_risk_summary, pro_risk_summary, semi_quant_regime, divergence_info)
 
 today = datetime.now().strftime("%Y · %m · %d / %a")
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
@@ -1203,27 +1226,40 @@ if divergence_info.get("items"):
         unsafe_allow_html=True,
     )
 
+
+decision_detail = " · ".join([
+    f"宏观：{macro_risk_summary.get('title')}",
+    f"专业：{pro_risk_summary.get('title')}",
+    f"半量化：{semi_quant_regime.get('cn')}",
+    f"背离：{divergence_info.get('title')}",
+])
+
 st.markdown(
     f"""
-<div class="macro-risk-summary {macro_risk_summary.get("level")}">
-  <b>Macro Risk Summary · {macro_risk_summary.get("title")}</b><br>
-  {macro_risk_summary.get("msg")}<br>
-  <span style="font-size:12px;">{" · ".join(macro_risk_summary.get("detail", []))}</span>
+<div class="decision-summary {combined_level}">
+  <div class="decision-title">Decision Summary · 综合结论</div>
+  <div class="decision-grid">
+    <div>
+      <div class="decision-k">Macro Risk · 宏观环境</div>
+      <div class="decision-v">{macro_risk_summary.get("title")}</div>
+      <div>{macro_risk_summary.get("msg")}</div>
+    </div>
+    <div>
+      <div class="decision-k">Semi-Quant Regime · 半量化状态</div>
+      <div class="decision-v">{semi_quant_regime.get("cn")}</div>
+      <div>{semi_quant_regime.get("action")}</div>
+    </div>
+    <div>
+      <div class="decision-k">Pro / Divergence · 专业与背离</div>
+      <div class="decision-v">{pro_risk_summary.get("title")}</div>
+      <div>{decision_detail}</div>
+    </div>
+  </div>
 </div>
 """,
     unsafe_allow_html=True,
 )
 
-st.markdown(
-    f"""
-<div class="semiquant-box {semi_quant_regime.get("color")}">
-  <div class="semiquant-title">Semi-Quant Regime · 半量化市场状态：{semi_quant_regime.get("cn")} ({semi_quant_regime.get("regime")})</div>
-  <b>执行建议：</b>{semi_quant_regime.get("action")}<br>
-  <span style="font-size:12px;">{" · ".join(semi_quant_regime.get("detail", []))}</span>
-</div>
-""",
-    unsafe_allow_html=True,
-)
 
 st.markdown("### Macro & Credit · 宏观信用指标")
 cols = st.columns(4, gap="medium")
