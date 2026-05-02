@@ -115,7 +115,7 @@ INDEX_MAP = {
 }
 MACRO_SYMBOLS = {"10Y Yield": "^TNX", "DXY": "DX-Y.NYB", "HYG": "HYG", "LQD": "LQD"}
 MACRO_DISPLAY_NAMES = {"10Y Yield": "10Y Yield · 美国10年期国债收益率", "DXY": "DXY · 美元指数", "HYG": "HYG · 高收益债信用风险", "LQD": "LQD · 投资级债/利率压力"}
-PERIOD_OPTIONS = ["5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
+PERIOD_OPTIONS = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y"]
 INTERVAL_OPTIONS = ["1d", "60m", "30m", "15m", "5m", "1m"]
 FG_HISTORY_PATH = Path("fg_history.csv")
 
@@ -716,7 +716,7 @@ def build_corr_chart(corr_df):
 with st.sidebar:
     st.markdown("### Dashboard Settings")
     index_label = st.selectbox("Market index", list(INDEX_MAP.keys()), index=0)
-    period = st.selectbox("History window", PERIOD_OPTIONS, index=4)
+    period = st.selectbox("History window", PERIOD_OPTIONS, index=0)
     interval = st.selectbox("Interval", INTERVAL_OPTIONS, index=0)
     rolling_window = st.slider("Rolling correlation window", 5, 120, 30, 5)
     refresh = st.slider("Auto refresh seconds", 0, 600, 120, 15)
