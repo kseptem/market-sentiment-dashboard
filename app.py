@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from typing import Optional, Tuple
 
@@ -460,6 +461,87 @@ def fetch_cnn_fear_greed(manual_value: float) -> Tuple[float, str, str, pd.DataF
     return float(manual_value), "Manual fallback", "Manual fallback · CNN blocked/unavailable", fallback_hist
 
 
+@st.cache_data(ttl=300, show_spinner=False)
+def fetch_finhacker_fear_greed() -> Tuple[Optional[float], Optional[str], str, pd.DataFrame]:
+    """
+    Finhacker is used as a non-official fallback when CNN blocks Streamlit Cloud.
+    The page is currently public and contains the latest CNN Fear & Greed value in HTML text.
+    """
+    url = "https://www.finhacker.cz/en/fear-and-greed-index-historical-data-and-chart/"
+    headers = {
+        "User-Agent": "Mozilla/5.0",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    }
+
+    try:
+        r = requests.get(url, headers=headers, timeout=12)
+        r.raise_for_status()
+        html = r.text
+
+        patterns = [
+            r"The current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*-\s*([a-zA-Z ]+)",
+            r"current value of the Fear\s*&\s*Greed Index.*?is\s+(\d+(?:\.\d+)?)\s*-\s*([a-zA-Z ]+)",
+            r"Fear\s*&\s*Greed Index.*?current value.*?(\d+(?:\.\d+)?)\s*-\s*([a-zA-Z ]+)",
+        ]
+
+        value = None
+        label = None
+
+        for pat in patterns:
+            m = re.search(pat, html, re.I | re.S)
+            if m:
+                value = safe_float(m.group(1), None)
+                label = m.group(2).strip().title()
+                break
+
+        # Backup: search JSON-LD / visible text around "current value"
+        if value is None:
+            compact = re.sub(r"\s+", " ", html)
+            m = re.search(r"current value.{0,180}?(\d{1,3})(?:\s|&nbsp;)*-(?:\s|&nbsp;)*([A-Za-z ]{3,30})", compact, re.I)
+            if m:
+                value = safe_float(m.group(1), None)
+                label = m.group(2).strip().title()
+
+        if value is None:
+            return None, None, "Finhacker parse failed", pd.DataFrame()
+
+        value = max(0.0, min(100.0, float(value)))
+        if not label:
+            label = "Finhacker"
+
+        hist = pd.DataFrame(
+            [{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": value}]
+        )
+
+        return value, label, "Finhacker fallback", hist
+
+    except Exception as e:
+        return None, None, f"Finhacker unavailable: {e}", pd.DataFrame()
+
+
+def fetch_fear_greed_with_fallback(manual_value: float) -> Tuple[float, str, str, pd.DataFrame]:
+    """
+    Priority:
+    1. CNN dataviz endpoint
+    2. Finhacker public page fallback
+    3. Manual fallback
+    """
+    cnn_value, cnn_rating, cnn_source, cnn_hist = fetch_cnn_fear_greed(manual_value)
+
+    if "CNN live endpoint" in cnn_source:
+        return cnn_value, cnn_rating, cnn_source, cnn_hist
+
+    fh_value, fh_rating, fh_source, fh_hist = fetch_finhacker_fear_greed()
+    if fh_value is not None:
+        return fh_value, fh_rating or "Finhacker", fh_source, fh_hist
+
+    manual_hist = pd.DataFrame(
+        [{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": float(manual_value)}]
+    )
+    return float(manual_value), "Manual fallback", f"Manual fallback · CNN and Finhacker unavailable", manual_hist
+
+
+
 def vix_level(v: float):
     if v < 12:
         return "极度乐观", "谨慎追高，保持警觉", "#10b981", 0
@@ -795,7 +877,7 @@ index_df = fetch_yahoo(symbol, period, interval)
 vix_df = fetch_yahoo("^VIX", period, interval)
 
 vix_value = safe_float(vix_df["Close"].iloc[-1], 0) if not vix_df.empty else 0
-fg_value, fg_rating, fg_source, fg_hist = fetch_cnn_fear_greed(float(manual_fg))
+fg_value, fg_rating, fg_source, fg_hist = fetch_fear_greed_with_fallback(float(manual_fg))
 
 vix_label, vix_strategy, vix_color, vix_idx = vix_level(vix_value)
 fg_label, fg_strategy, fg_color, fg_idx = fear_greed_level(fg_value)
@@ -908,7 +990,7 @@ st.markdown(
 <div class="small-note">
 Data: Yahoo Finance via yfinance · CBOE VIX · CNN Fear & Greed unofficial endpoint/fallback manual input.
 <br>
-仅供参考，不构成投资建议。CNN Fear & Greed 没有稳定官方公开 API，如接口不可用会自动使用左侧手动 fallback 数值。
+仅供参考，不构成投资建议。CNN Fear & Greed 没有稳定官方公开 API，如接口不可用会自动尝试 Finhacker fallback，仍失败才使用左侧手动 fallback 数值。
 </div>
 """,
     unsafe_allow_html=True,
