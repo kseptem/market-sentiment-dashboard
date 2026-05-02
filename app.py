@@ -1076,16 +1076,6 @@ pro_data = {name: fetch_yahoo(sym, analytics_period, analytics_interval) for nam
 index_df_long = fetch_yahoo(symbol, "1y", "1d")
 real_yield_df = fetch_fred_series("DFII10", lookback_days=900)
 
-# Defensive fallbacks for Pro indicators
-if "pro_data_display" not in globals():
-    pro_data_display = {}
-if "pro_data" not in globals():
-    pro_data = {}
-if "index_df_long" not in globals():
-    index_df_long = pd.DataFrame()
-if "real_yield_df" not in globals():
-    real_yield_df = pd.DataFrame()
-
 vix_value = safe_float(vix_df_display["Close"].iloc[-1], 0) if not vix_df_display.empty else (safe_float(vix_df["Close"].iloc[-1], 0) if not vix_df.empty else 0)
 fg_value, fg_rating, fg_source, _fg_live = fetch_fear_greed_with_fallback(float(manual_fg))
 fg_history_table = build_fg_history_for_app(float(fg_value), str(fg_rating), str(fg_source))
@@ -1127,6 +1117,27 @@ for name, df_daily in macro_data.items():
 
 vix_label, vix_strategy, vix_color, vix_idx = vix_level(float(vix_value))
 fg_label, fg_strategy, fg_color, fg_idx = fear_greed_level(float(fg_value))
+# Guaranteed Pro indicator data initialization
+try:
+    pro_data_display
+except NameError:
+    pro_data_display = {name: fetch_yahoo(sym, display_period, display_interval) for name, sym in PRO_SYMBOLS.items()}
+
+try:
+    pro_data
+except NameError:
+    pro_data = {name: fetch_yahoo(sym, analytics_period, analytics_interval) for name, sym in PRO_SYMBOLS.items()}
+
+try:
+    index_df_long
+except NameError:
+    index_df_long = fetch_yahoo(symbol, "1y", "1d")
+
+try:
+    real_yield_df
+except NameError:
+    real_yield_df = fetch_fred_series("DFII10", lookback_days=900)
+
 # Professional indicator summary
 pro_summary = {}
 
