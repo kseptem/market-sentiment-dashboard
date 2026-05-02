@@ -116,6 +116,46 @@ html,body,.stApp{background:#f8fafc!important;color:#111827!important}.block-con
 .pro-title{font-size:20px;font-weight:950;color:#111827;margin:16px 0 10px}
 @media(max-width:760px){.decision-grid{grid-template-columns:1fr;gap:8px}.decision-v{font-size:17px}.decision-summary{padding:12px 14px}.pro-title{font-size:17px;margin:10px 0 8px}}
 
+
+/* --- Pro summary visual upgrade --- */
+.pro-composite-box{
+    border-radius:18px;
+    padding:15px 18px;
+    margin:14px 0 20px 0;
+    border:1px solid #d7dde8;
+    box-shadow:0 2px 12px rgba(17,24,39,.035);
+    font-size:13px;
+    line-height:1.55;
+}
+.pro-composite-box.green{
+    background:linear-gradient(135deg,#ecfdf5 0%,#ffffff 78%);
+    border-color:#a7f3d0;
+    color:#065f46;
+}
+.pro-composite-box.yellow{
+    background:linear-gradient(135deg,#fffbeb 0%,#ffffff 78%);
+    border-color:#fde68a;
+    color:#92400e;
+}
+.pro-composite-box.red{
+    background:linear-gradient(135deg,#fef2f2 0%,#ffffff 78%);
+    border-color:#fecaca;
+    color:#991b1b;
+}
+.pro-composite-title{
+    font-size:16px;
+    font-weight:950;
+    margin-bottom:6px;
+}
+.pro-card-spacer{
+    margin-bottom:18px;
+}
+@media(max-width:760px){
+    .pro-composite-box{padding:12px 14px;margin:10px 0 14px 0}
+    .pro-composite-title{font-size:15px}
+    .pro-card-spacer{margin-bottom:10px}
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -1260,10 +1300,10 @@ for i, name in enumerate(["10Y Yield", "DXY", "HYG", "LQD"]):
 
 st.markdown(
     f"""
-<div class="pro-summary {pro_risk_summary.get("level")}">
-  <b>Pro Composite Summary · {pro_risk_summary.get("title")}</b><br>
-  {pro_risk_summary.get("msg")}<br>
-  <span style="font-size:12px;">{" · ".join(pro_risk_summary.get("detail", []))}</span>
+<div class="pro-composite-box {pro_risk_summary.get("level")}">
+  <div class="pro-composite-title">Pro Composite Summary · {pro_risk_summary.get("title")}</div>
+  <div>{pro_risk_summary.get("msg")}</div>
+  <div style="font-size:12px;margin-top:6px;">{" · ".join(pro_risk_summary.get("detail", []))}</div>
 </div>
 """,
     unsafe_allow_html=True,
@@ -1274,6 +1314,7 @@ pro_cols = st.columns(3, gap="medium")
 for idx, name in enumerate(["Real Yield", "MOVE", "VIX3M/VIX", "RSP/SPY", "Trend", "Put/Call"]):
     item = pro_summary.get(name, {})
     with pro_cols[idx % 3]:
+        st.markdown('<div class="pro-card-spacer">', unsafe_allow_html=True)
         render_macro_card(
             MACRO_DISPLAY_NAMES.get(name, name),
             item.get("display", "N/A"),
@@ -1283,6 +1324,7 @@ for idx, name in enumerate(["Real Yield", "MOVE", "VIX3M/VIX", "RSP/SPY", "Trend
             f"{item.get('change'):+.2f}%" if item.get("change") is not None else "N/A",
             pro_risk_summary.get("levels", {}).get(name, macro_heat_level(name, item)),
         )
+        st.markdown('</div>', unsafe_allow_html=True)
 
 
 st.markdown("### 策略区间")
