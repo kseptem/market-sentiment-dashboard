@@ -890,7 +890,7 @@ today = datetime.now().strftime("%Y · %m · %d / %a")
 # -----------------------------
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
 st.markdown('<div class="pill">◆ DAILY MARKET PULSE</div>', unsafe_allow_html=True)
-st.markdown('<div class="main-title">今日美股情绪观察</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">今日美股情绪观察-KSeptem</div>', unsafe_allow_html=True)
 st.markdown(
     '<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">US INDEX · VIX & CNN FEAR & GREED</b>'
     '　标普500 / 纳指 · 波动率指数 · 恐惧与贪婪指数</div>',
