@@ -215,6 +215,49 @@ html,body,.stApp{background:#f8fafc!important;color:#111827!important}.block-con
     .unified-v{font-size:16px}
 }
 
+
+/* --- Decision window guidance --- */
+.mode-chip {
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    border-radius:14px;
+    padding:10px 14px;
+    margin:4px 0 14px 0;
+    border:1px solid #d7dde8;
+    font-size:13px;
+    font-weight:850;
+}
+.mode-chip.green {
+    background:linear-gradient(135deg,#ecfdf5 0%,#ffffff 80%);
+    border-color:#a7f3d0;
+    color:#065f46;
+}
+.mode-chip.yellow {
+    background:linear-gradient(135deg,#fffbeb 0%,#ffffff 80%);
+    border-color:#fde68a;
+    color:#92400e;
+}
+.mode-chip.gray {
+    background:linear-gradient(135deg,#f8fafc 0%,#ffffff 80%);
+    border-color:#cbd5e1;
+    color:#475569;
+}
+.mode-chip .mode-main {
+    font-size:14px;
+    font-weight:950;
+}
+.mode-chip .mode-sub {
+    font-size:12px;
+    opacity:.85;
+}
+@media(max-width:760px){
+    .mode-chip{display:block;padding:9px 11px;margin:2px 0 10px 0}
+    .mode-chip .mode-main{font-size:13px}
+    .mode-chip .mode-sub{font-size:11px;margin-top:3px}
+}
+
 </style>
 """,
     unsafe_allow_html=True,
@@ -1113,6 +1156,21 @@ with st.sidebar:
     st.markdown("### Dashboard Settings")
     index_label = st.selectbox("Market index", list(INDEX_MAP.keys()), index=0)
     period = st.selectbox("History window", PERIOD_OPTIONS, index=1)
+    if period == "3d":
+        st.success("推荐决策周期：3d · 用于日常仓位调整")
+    elif period == "实时盘中":
+        st.warning("实时盘中仅用于观察，不建议直接改变策略")
+    elif period in ["5d", "1mo"]:
+        st.info("辅助确认周期：用于风控/趋势确认，不作为主决策")
+    else:
+        st.caption("当前周期偏观察用途，主决策建议回到 3d")
+
+    st.markdown("""
+**周期使用建议**
+- **3d**：主决策周期，日常加仓/控仓
+- **5d / 1mo**：风控确认，看短中期是否转弱
+- **实时盘中**：只看盘中异动，不直接改策略
+""")
     interval = st.selectbox("Interval", INTERVAL_OPTIONS, index=0)
     rolling_window = st.slider("Rolling correlation window", 5, 120, 30, 5)
     refresh = st.slider("Auto refresh seconds", 0, 600, 120, 15)
@@ -1134,6 +1192,23 @@ display_interval = "1m" if is_live_mode else interval
 
 analytics_period = "3d" if is_live_mode else period
 analytics_interval = "1d"
+
+if period == "3d":
+    decision_mode_label = "主决策模式"
+    decision_mode_color = "green"
+    decision_mode_note = "用于日常仓位调整，系统默认推荐。"
+elif period == "实时盘中":
+    decision_mode_label = "实时观察模式"
+    decision_mode_color = "yellow"
+    decision_mode_note = "分钟级看盘中异动；相关性和趋势仍使用日线，不建议直接改变策略。"
+elif period in ["5d", "1mo"]:
+    decision_mode_label = "风控确认模式"
+    decision_mode_color = "yellow"
+    decision_mode_note = "用于确认短期/中期风险是否转弱，辅助主决策。"
+else:
+    decision_mode_label = "趋势观察模式"
+    decision_mode_color = "gray"
+    decision_mode_note = "用于观察更长周期结构，不作为日常加仓/减仓主信号。"
 
 index_df_display = fetch_yahoo(symbol, display_period, display_interval)
 vix_df_display = fetch_yahoo("^VIX", display_period, display_interval)
@@ -1246,6 +1321,19 @@ st.markdown('<div class="main-title">大盘 ETF 投资观测系统</div>', unsaf
 mode_text = "实时盘中 · 分钟级展示 / 日线计算" if is_live_mode else f"{period} · 日线计算"
 st.markdown(f'<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">Price · VIX · Fear & Greed · Rates · USD · Credit</b>　价格 / 波动 / 情绪 / 利率 / 美元 / 信用　<span class="source-chip">{mode_text}</span></div>', unsafe_allow_html=True)
 
+st.markdown(
+    f"""
+<div class="mode-chip {decision_mode_color}">
+  <div>
+    <div class="mode-main">当前模式：{decision_mode_label} · Window = {period}</div>
+    <div class="mode-sub">{decision_mode_note}</div>
+  </div>
+  <div class="mode-sub">推荐主决策：3d + 1d interval</div>
+</div>
+""",
+    unsafe_allow_html=True,
+)
+
 last_index = f"{index_df_display['Close'].iloc[-1]:,.2f}" if not index_df_display.empty else (f"{index_df['Close'].iloc[-1]:,.2f}" if not index_df.empty else "N/A")
 idx_ret = f"{index_return:+.2f}% window" if index_return is not None else "N/A"
 vix_ret = f"{vix_return:+.2f}% window" if vix_return is not None else "N/A"
@@ -1263,12 +1351,14 @@ with card3:
   <b>{signal}</b><br>{note_html}
 </div>""", unsafe_allow_html=True)
 
+decision_period_warning = "" if period == "3d" else "当前非主决策周期，建议只作为辅助观察。"
+
 st.markdown(f"""
 <div class="strategy-grid">
   <div class="strategy-panel">
     <div class="title">◆ TODAY'S STRATEGY · 今日策略</div>
     <div class="main">{strategy}</div>
-    <div class="compact-summary-note" style="margin-top:10px;"><b>半量化状态：</b>{semi_quant_regime.get("cn")} ({semi_quant_regime.get("regime")})</div>
+    <div class="compact-summary-note" style="margin-top:10px;"><b>决策周期：</b>{period} · {decision_mode_label}</div><div class="compact-summary-note"><b>半量化状态：</b>{semi_quant_regime.get("cn")} ({semi_quant_regime.get("regime")})</div>
     <div class="compact-summary-note"><b>核心风险：</b>{pro_risk_summary.get("title")} · {divergence_info.get("title")}</div>
     <div class="compact-summary-note"><b>信号标签：</b>{" · ".join(signal_tags)}</div>
   </div>
@@ -1285,7 +1375,7 @@ st.markdown(f"""
     <div class="v">{position_suggestion}</div>
     <div class="compact-summary-note"><b>执行原则：</b>{semi_quant_regime.get("action")}</div>
     <div class="compact-summary-note" style="margin-top:8px;"><b>宏观：</b>{macro_risk_summary.get("title")} · <b>专业：</b>{pro_risk_summary.get("title")}</div>
-    <div class="compact-summary-note">指权益类资产目标仓位，不是单只股票仓位。</div>
+    <div class="compact-summary-note">指权益类资产目标仓位，不是单只股票仓位。</div><div class="compact-summary-note"><b>{decision_period_warning}</b></div>
   </div>
 </div>
 """, unsafe_allow_html=True)
