@@ -831,7 +831,7 @@ score, signal, signal_level, strategy, position_suggestion, signal_tags, signal_
 today = datetime.now().strftime("%Y · %m · %d / %a")
 st.markdown(f'<div class="date-pill">{today}</div>', unsafe_allow_html=True)
 st.markdown('<div class="pill">◆ VOO / SPY MACRO RISK DASHBOARD</div>', unsafe_allow_html=True)
-st.markdown('<div class="main-title">大盘 ETF 投资观测系统-By Kseptem</div>', unsafe_allow_html=True)
+st.markdown('<div class="main-title">美股大盘/ETF投资观测系统</div>', unsafe_allow_html=True)
 mode_text = "实时盘中 · 分钟级展示 / 日线计算" if is_live_mode else f"{period} · 日线计算"
 st.markdown(f'<div class="sub-title"><span class="green-accent"></span><b style="color:#059669;">Price · VIX · Fear & Greed · Rates · USD · Credit</b>　价格 / 波动 / 情绪 / 利率 / 美元 / 信用　<span class="source-chip">{mode_text}</span></div>', unsafe_allow_html=True)
 
