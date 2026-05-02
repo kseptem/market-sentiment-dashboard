@@ -1141,16 +1141,16 @@ except NameError:
 # Professional indicator summary
 pro_summary = {}
 
-move_val = latest_close(pro_data_display.get("MOVE", pd.DataFrame())) or latest_close(pro_data.get("MOVE", pd.DataFrame()))
+move_val = latest_close(get_df_from_dict(pro_data_display, "MOVE")) or latest_close(get_df_from_dict(pro_data, "MOVE"))
 move_label, move_note, move_color, move_score = classify_move(move_val)
-pro_summary["MOVE"] = {"value": move_val, "display": f"{move_val:.1f}" if move_val is not None else "N/A", "label": move_label, "note": move_note, "color": move_color, "score": move_score, "change": pct_change_text(pro_data_display.get("MOVE", pd.DataFrame()))}
+pro_summary["MOVE"] = {"value": move_val, "display": f"{move_val:.1f}" if move_val is not None else "N/A", "label": move_label, "note": move_note, "color": move_color, "score": move_score, "change": pct_change_text(get_df_from_dict(pro_data_display, "MOVE"))}
 
-vix3m_val = latest_close(pro_data_display.get("VIX3M", pd.DataFrame())) or latest_close(pro_data.get("VIX3M", pd.DataFrame()))
+vix3m_val = latest_close(get_df_from_dict(pro_data_display, "VIX3M")) or latest_close(get_df_from_dict(pro_data, "VIX3M"))
 vix_term_ratio, term_label, term_note, term_color, term_score = classify_vix_term(vix3m_val, vix_value)
 pro_summary["VIX3M/VIX"] = {"value": vix_term_ratio, "display": f"{vix_term_ratio:.2f}" if vix_term_ratio is not None else "N/A", "label": term_label, "note": term_note, "color": term_color, "score": term_score, "change": None}
 
-rsp_df = pro_data_display.get("RSP", pd.DataFrame())
-spy_df = pro_data_display.get("SPY", pd.DataFrame())
+rsp_df = get_df_from_dict(pro_data_display, "RSP")
+spy_df = get_df_from_dict(pro_data_display, "SPY")
 rsp_spy_val, rsp_spy_change = None, None
 try:
     if rsp_df is not None and not rsp_df.empty and spy_df is not None and not spy_df.empty:
@@ -1346,10 +1346,10 @@ st.plotly_chart(build_macro_trend_chart(macro_data), use_container_width=True)
 
 st.markdown("### Pro Trends · 专业指标趋势")
 pro_trend_data = {
-    "MOVE": pro_data.get("MOVE", pd.DataFrame()),
-    "VIX3M": pro_data.get("VIX3M", pd.DataFrame()),
-    "RSP": pro_data.get("RSP", pd.DataFrame()),
-    "SPY": pro_data.get("SPY", pd.DataFrame()),
+    "MOVE": get_df_from_dict(pro_data, "MOVE"),
+    "VIX3M": get_df_from_dict(pro_data, "VIX3M"),
+    "RSP": get_df_from_dict(pro_data, "RSP"),
+    "SPY": get_df_from_dict(pro_data, "SPY"),
     "Real Yield": real_yield_df,
 }
 st.plotly_chart(build_macro_trend_chart(pro_trend_data), use_container_width=True)
