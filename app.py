@@ -413,36 +413,87 @@ def fetch_cnn_fear_greed(manual_value: float) -> Tuple[float, str, str, pd.DataF
 
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_finhacker_fear_greed() -> Tuple[Optional[float], Optional[str], str, pd.DataFrame]:
-    url = "https://www.finhacker.cz/en/fear-and-greed-index-historical-data-and-chart/"
-    headers = {"User-Agent": "Mozilla/5.0", "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"}
-    try:
-        r = requests.get(url, headers=headers, timeout=12)
-        r.raise_for_status()
-        html = re.sub(r"\s+", " ", r.text)
-        patterns = [
-            r"The current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*-\s*([a-zA-Z ]+)",
-            r"current value of the Fear\s*&\s*Greed Index.*?is\s+(\d+(?:\.\d+)?)\s*-\s*([a-zA-Z ]+)",
-            r"current value.{0,180}?(\d{1,3})(?:\s|&nbsp;)*-(?:\s|&nbsp;)*([A-Za-z ]{3,30})",
-        ]
-        for pat in patterns:
-            m = re.search(pat, html, re.I | re.S)
-            if m:
-                value = max(0.0, min(100.0, float(m.group(1))))
-                label = m.group(2).strip().title()
-                return value, label, "Finhacker fallback", pd.DataFrame([{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": value}])
-        return None, None, "Finhacker parse failed", pd.DataFrame()
-    except Exception as e:
-        return None, None, f"Finhacker unavailable: {e}", pd.DataFrame()
+    """
+    Finhacker tracks the CNN Fear & Greed Index historical/current value.
+    Used only as a CNN-mouthpiece fallback when CNN's own dataviz endpoint is blocked.
+    """
+    urls = [
+        "https://www.finhacker.cz/en/fear-and-greed-index-historical-data-and-chart/",
+        "https://www.finhacker.cz/fear-and-greed-index-historical-data-and-chart/",
+    ]
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36",
+        "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "Accept-Language": "en-US,en;q=0.9,zh-CN;q=0.8,zh;q=0.7",
+        "Cache-Control": "no-cache",
+    }
+
+    last_error = ""
+    for url in urls:
+        try:
+            r = requests.get(url, headers=headers, timeout=15)
+            r.raise_for_status()
+            html = re.sub(r"\s+", " ", r.text)
+
+            patterns = [
+                r"current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*\(([a-zA-Z ]+)\)",
+                r"current value of the Fear\s*&\s*Greed Index.*? is\s+(\d+(?:\.\d+)?)\s*\(([a-zA-Z ]+)\)",
+                r"The current value.*?Fear\s*&\s*Greed.*?is\s+(\d+(?:\.\d+)?)\s*[-–]\s*([a-zA-Z ]+)",
+                r"current value.{0,240}?(\d{1,3})(?:\s|&nbsp;)*(?:\(|-|–)([A-Za-z ]{3,30})(?:\)|\.|,)",
+            ]
+
+            for pat in patterns:
+                match = re.search(pat, html, re.I | re.S)
+                if match:
+                    value = max(0.0, min(100.0, float(match.group(1))))
+                    label = match.group(2).strip().title()
+                    hist = pd.DataFrame([{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": value}])
+                    return value, label, "Finhacker CNN mirror", hist
+
+            nearby = re.search(r"Fear\s*&\s*Greed Index.{0,600}", html, re.I | re.S)
+            if nearby:
+                nums = re.findall(r"\b([0-9]{1,3})(?:\.\d+)?\b", nearby.group(0))
+                candidates = [int(x) for x in nums if 0 <= int(x) <= 100]
+                if candidates:
+                    value = float(candidates[0])
+                    label = "Greed" if value >= 56 else ("Fear" if value <= 44 else "Neutral")
+                    hist = pd.DataFrame([{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": value}])
+                    return value, label, "Finhacker CNN mirror · loose parse", hist
+
+            last_error = "parse failed"
+
+        except Exception as e:
+            last_error = str(e)
+
+    return None, None, f"Finhacker CNN mirror unavailable: {last_error}", pd.DataFrame()
 
 
 def fetch_fear_greed_with_fallback(manual_value: float) -> Tuple[float, str, str, pd.DataFrame]:
+    # 1) CNN official endpoint
     cnn_value, cnn_rating, cnn_source, cnn_hist = fetch_cnn_fear_greed(manual_value)
     if "CNN live endpoint" in cnn_source:
         return cnn_value, cnn_rating, cnn_source, cnn_hist
+
+    # 2) Finhacker mirror of CNN Fear & Greed
     fh_value, fh_rating, fh_source, fh_hist = fetch_finhacker_fear_greed()
     if fh_value is not None:
-        return fh_value, fh_rating or "Finhacker", fh_source, fh_hist
-    return float(manual_value), "Manual fallback", "Manual fallback · CNN and Finhacker unavailable", pd.DataFrame([{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": float(manual_value)}])
+        return fh_value, fh_rating or "CNN Mirror", fh_source, fh_hist
+
+    # 3) Local GitHub history last value to avoid jumping back to 50 when web sources are temporarily blocked.
+    try:
+        local_hist = load_fg_history()
+        if local_hist is not None and not local_hist.empty:
+            last_row = local_hist.sort_values("date").iloc[-1]
+            value = float(last_row["FearGreed"])
+            label = str(last_row.get("label", "")) or ("Greed" if value >= 56 else ("Fear" if value <= 44 else "Neutral"))
+            hist = fg_history_for_correlation(local_hist)
+            return value, label, "Local fg_history.csv fallback", hist
+    except Exception:
+        pass
+
+    # 4) Manual fallback as final safety net.
+    manual_hist = pd.DataFrame([{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": float(manual_value)}])
+    return float(manual_value), "Manual fallback", "Manual fallback · CNN sources unavailable", manual_hist
 
 
 def load_fg_history() -> pd.DataFrame:
