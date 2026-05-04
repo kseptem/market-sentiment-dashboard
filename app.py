@@ -414,8 +414,8 @@ def fetch_cnn_fear_greed(manual_value: float) -> Tuple[float, str, str, pd.DataF
 @st.cache_data(ttl=300, show_spinner=False)
 def fetch_finhacker_fear_greed() -> Tuple[Optional[float], Optional[str], str, pd.DataFrame]:
     """
-    Finhacker tracks the CNN Fear & Greed Index historical/current value.
-    Used only as a CNN-mouthpiece fallback when CNN's own dataviz endpoint is blocked.
+    Strict parser for Finhacker CNN Fear & Greed mirror.
+    Important: do NOT use loose number extraction, because it can grab unrelated page numbers.
     """
     urls = [
         "https://www.finhacker.cz/en/fear-and-greed-index-historical-data-and-chart/",
@@ -435,11 +435,12 @@ def fetch_finhacker_fear_greed() -> Tuple[Optional[float], Optional[str], str, p
             r.raise_for_status()
             html = re.sub(r"\s+", " ", r.text)
 
+            # Only accept explicit current-value statements.
             patterns = [
-                r"current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*\(([a-zA-Z ]+)\)",
-                r"current value of the Fear\s*&\s*Greed Index.*? is\s+(\d+(?:\.\d+)?)\s*\(([a-zA-Z ]+)\)",
-                r"The current value.*?Fear\s*&\s*Greed.*?is\s+(\d+(?:\.\d+)?)\s*[-–]\s*([a-zA-Z ]+)",
-                r"current value.{0,240}?(\d{1,3})(?:\s|&nbsp;)*(?:\(|-|–)([A-Za-z ]{3,30})(?:\)|\.|,)",
+                r"The current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*[-–]\s*([A-Za-z ]+)",
+                r"The current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*\(([A-Za-z ]+)\)",
+                r"current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*[-–]\s*([A-Za-z ]+)",
+                r"current value of the Fear\s*&\s*Greed Index as of .*? is\s+(\d+(?:\.\d+)?)\s*\(([A-Za-z ]+)\)",
             ]
 
             for pat in patterns:
@@ -447,20 +448,16 @@ def fetch_finhacker_fear_greed() -> Tuple[Optional[float], Optional[str], str, p
                 if match:
                     value = max(0.0, min(100.0, float(match.group(1))))
                     label = match.group(2).strip().title()
+
+                    # Sanity check: reject obvious text contamination.
+                    valid_words = ["Extreme Fear", "Fear", "Neutral", "Greed", "Extreme Greed"]
+                    if not any(w.lower() in label.lower() for w in valid_words):
+                        continue
+
                     hist = pd.DataFrame([{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": value}])
                     return value, label, "Finhacker CNN mirror", hist
 
-            nearby = re.search(r"Fear\s*&\s*Greed Index.{0,600}", html, re.I | re.S)
-            if nearby:
-                nums = re.findall(r"\b([0-9]{1,3})(?:\.\d+)?\b", nearby.group(0))
-                candidates = [int(x) for x in nums if 0 <= int(x) <= 100]
-                if candidates:
-                    value = float(candidates[0])
-                    label = "Greed" if value >= 56 else ("Fear" if value <= 44 else "Neutral")
-                    hist = pd.DataFrame([{"time": pd.Timestamp.now(tz="UTC"), "FearGreed": value}])
-                    return value, label, "Finhacker CNN mirror · loose parse", hist
-
-            last_error = "parse failed"
+            last_error = "strict parse failed"
 
         except Exception as e:
             last_error = str(e)
